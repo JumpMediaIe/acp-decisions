@@ -62,6 +62,14 @@ class PoliteClient:
 
     def get(self, url: str) -> str:
         """GET `url`, return body as text. Raises on persistent failure."""
+        return self._request(url).text
+
+    def get_bytes(self, url: str) -> bytes:
+        """GET `url`, return raw bytes (for PDFs and other binary content)."""
+        return self._request(url).content
+
+    def _request(self, url: str) -> httpx.Response:
+        """Shared GET with rate limit + retry. Returns the successful response."""
         last_exc: Exception | None = None
         for attempt, backoff in enumerate((0.0,) + self._retry_backoffs):
             if backoff > 0:
@@ -75,7 +83,7 @@ class PoliteClient:
                 continue
 
             if 200 <= resp.status_code < 300:
-                return resp.text
+                return resp
             if resp.status_code == 429:
                 if attempt == len(self._retry_backoffs):
                     raise RateLimitedError(f"429 on {url} after {attempt + 1} attempts")
