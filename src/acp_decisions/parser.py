@@ -151,20 +151,27 @@ def _extract_documents(tree: HTMLParser) -> list[DocumentLink]:
         href = a.attributes.get("href") or ""
         if not href.lower().endswith(".pdf"):
             continue
-        url = urljoin(_BASE_URL, href)
-        docs.append(DocumentLink(doc_type=_classify_doc_url(href), url=url))
+        doc_type = _classify_doc_url(href)
+        if doc_type is None:
+            # Skip the publicaccess listing — observations, internal memos,
+            # EIAR volumes etc. — they're noise for our refusal-reason archive.
+            continue
+        docs.append(DocumentLink(doc_type=doc_type, url=urljoin(_BASE_URL, href)))
     return docs
 
 
-def _classify_doc_url(href: str) -> str:
-    """Map a PDF URL path to one of the canonical doc_type buckets."""
+def _classify_doc_url(href: str) -> str | None:
+    """Map a canonical PDF URL path to a doc_type bucket. Return None for non-canonical."""
     h = href.lower()
-    if "/cases/orders/" in h:
+    if "/anbordpleanala/media/abp/cases/orders/" in h:
         return "order"
-    if "/cases/reports/" in h:
+    if "/anbordpleanala/media/abp/cases/reports/" in h:
         return "inspector_report"
-    if "/cases/directions/" in h:
+    if "/anbordpleanala/media/abp/cases/directions/" in h:
         return "direction"
-    if "/cases/bmr/" in h:
+    if "/anbordpleanala/media/abp/cases/bmr/" in h:
         return "bmr"
-    return "other"
+    if "/anbordpleanala/media/abp/cases/" in h:
+        # Other canonical paths (e.g. letters/) — keep them but bucket as 'other'.
+        return "other"
+    return None
