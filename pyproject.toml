@@ -9,6 +9,7 @@ dependencies = [
     "PyYAML>=6.0",
     "rich>=13.9",
     "python-slugify>=8.0",
+    "pypdf>=6.0",
 ]
 
 [project.optional-dependencies]
