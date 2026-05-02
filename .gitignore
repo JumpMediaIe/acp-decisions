@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# uv
+.python-version
+
+# Coverage
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# DO NOT ignore data/acp.db — it IS the deliverable, intentionally committed
+# DO NOT ignore taxonomy.yaml — it IS configuration, intentionally committed
