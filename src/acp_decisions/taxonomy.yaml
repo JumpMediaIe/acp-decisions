@@ -1,0 +1,208 @@
+# ACP refusal-reason taxonomy. Each category gets one row in the `categories`
+# table; the LLM classifier maps each refusal reason to one or more category IDs.
+#
+# Keep IDs stable. Editing labels/descriptions is fine; renaming an ID would
+# orphan existing reason_categories rows. Add new categories at the bottom.
+#
+# Groups give the analytics layer a way to roll up — e.g. "show me how many
+# refusals in 2025 cited any 'planning_policy' issue."
+
+categories:
+  # === Planning policy & zoning ===
+  - id: zoning_contravention
+    name: Material contravention of zoning objective
+    group: planning_policy
+    description: >
+      Proposed use or scale conflicts with the site's zoning objective in the
+      local development plan (e.g. residential on Z29 amenity-zoned land).
+
+  - id: development_plan_contravention
+    name: Material contravention of development plan
+    group: planning_policy
+    description: >
+      Conflicts with a specific policy or objective in the development plan
+      other than the zoning objective itself.
+
+  - id: rural_housing_policy
+    name: Rural housing policy non-compliance
+    group: planning_policy
+    description: >
+      Applicant fails to demonstrate rural housing need, social/economic ties,
+      or family-member criteria as required by the rural housing policy.
+
+  - id: premature_to_plan_review
+    name: Premature to development plan review
+    group: planning_policy
+    description: >
+      Decision deferred or refused on the grounds that the underlying plan is
+      under review and a decision now would prejudice the outcome.
+
+  - id: setting_precedent
+    name: Would set undesirable precedent
+    group: planning_policy
+    description: >
+      Granting permission would prejudice future planning decisions in the area
+      or set a precedent at odds with stated objectives.
+
+  - id: proper_planning_and_sustainable_development
+    name: Contrary to proper planning and sustainable development
+    group: planning_policy
+    description: >
+      The catch-all statutory phrase, used either alone or in addition to a
+      specific reason. Tagged when the order's wording explicitly invokes it.
+
+  # === Residential amenity ===
+  - id: overlooking_privacy
+    name: Overlooking / loss of privacy
+    group: residential_amenity
+    description: >
+      Windows, balconies, or terraces directly overlook neighbouring private
+      space at distances below the standard separation thresholds.
+
+  - id: overshadowing_daylight
+    name: Overshadowing / daylight / sunlight
+    group: residential_amenity
+    description: >
+      Loss of daylight, sunlight, or solar gain to neighbouring properties or
+      gardens.
+
+  - id: overbearing_visual_impact
+    name: Overbearing / dominant on neighbours
+    group: residential_amenity
+    description: >
+      Mass, height, or proximity creates an overbearing or dominant relationship
+      with neighbouring buildings.
+
+  - id: substandard_residential_amenity
+    name: Substandard residential amenity for occupants
+    group: residential_amenity
+    description: >
+      Internal layouts, dual-aspect ratios, room sizes, private open space, or
+      apartment mix fail current standards.
+
+  # === Visual / design / landscape ===
+  - id: visual_impact_landscape
+    name: Visual impact on rural landscape
+    group: visual_design
+    description: >
+      Building is visually prominent or out of character in a sensitive rural
+      landscape, hilltop, or scenic route view.
+
+  - id: scale_density_inappropriate
+    name: Scale / density / height inappropriate
+    group: visual_design
+    description: >
+      The proposal's scale, density, or height is excessive for the receiving
+      environment or surrounding context.
+
+  - id: design_quality
+    name: Architectural / design quality
+    group: visual_design
+    description: >
+      Design itself is poor, derivative, or fails to respond to the architectural
+      character of the area.
+
+  # === Heritage & character ===
+  - id: protected_structure
+    name: Impact on protected structure
+    group: heritage
+    description: >
+      Adverse effect on a protected structure or its curtilage / setting.
+
+  - id: aca_aci_character
+    name: Architectural Conservation Area character
+    group: heritage
+    description: >
+      Conflicts with the special character of an ACA, conservation area, or
+      historic streetscape.
+
+  - id: archaeology
+    name: Archaeology
+    group: heritage
+    description: >
+      Disturbance to a recorded archaeological site or zone of archaeological
+      potential.
+
+  # === Environment & biodiversity ===
+  - id: natura_appropriate_assessment
+    name: Adverse effect on Natura 2000 site
+    group: environment
+    description: >
+      Article 6 Habitats Directive: adverse effect on integrity of an SAC, SPA,
+      or other European site cannot be ruled out.
+
+  - id: protected_species
+    name: Impact on protected species or habitat
+    group: environment
+    description: >
+      Loss or degradation of habitat used by a protected species (bats, otters,
+      Brent goose feeding grounds, etc.) outside the Natura framework.
+
+  - id: flood_risk
+    name: Flood risk
+    group: environment
+    description: >
+      Site is at risk of fluvial, pluvial, coastal, or surface-water flooding,
+      or the proposal would increase flood risk elsewhere.
+
+  - id: water_quality
+    name: Water quality / pollution
+    group: environment
+    description: >
+      Discharges to surface or ground water risk failing WFD objectives.
+
+  - id: eia_eiar_inadequate
+    name: EIA / EIAR inadequate
+    group: environment
+    description: >
+      EIA Report missing required elements, inadequate cumulative assessment,
+      or insufficient mitigation detail.
+
+  - id: climate_action_conflict
+    name: Conflict with Climate Action Plan
+    group: environment
+    description: >
+      Proposal undermines specific climate-action targets or commitments.
+
+  # === Infrastructure & services ===
+  - id: traffic_access_safety
+    name: Traffic / access / road safety
+    group: infrastructure
+    description: >
+      Sight lines, junction safety, additional traffic load, pedestrian/cyclist
+      safety concerns at access points.
+
+  - id: parking_inadequate
+    name: Parking inadequate
+    group: infrastructure
+    description: >
+      Insufficient car or bicycle parking provision relative to standards.
+
+  - id: drainage_water_services
+    name: Inadequate drainage / water services
+    group: infrastructure
+    description: >
+      Capacity of public sewer, water main, or surface-water drainage cannot
+      accommodate the proposal.
+
+  - id: open_space_amenity_inadequate
+    name: Inadequate public / communal open space
+    group: infrastructure
+    description: >
+      Public, semi-private, or play-space provision below standard for the
+      number of units proposed.
+
+  - id: community_facilities_inadequate
+    name: Inadequate community / cultural / childcare provision
+    group: infrastructure
+    description: >
+      Required ancillary community facilities, cultural floor area, or
+      childcare are missing or undersized.
+
+  # === Catch-all ===
+  - id: other
+    name: Other
+    group: other
+    description: >
+      Reason did not match any defined category. Useful as a sentinel — a high
+      'other' rate signals the taxonomy needs new categories.
