@@ -17,9 +17,11 @@ from pathlib import Path
 
 from rich.console import Console
 
+from acp_decisions.classifier import OllamaClient, classify_unclassified
 from acp_decisions.db import open_db
 from acp_decisions.http_client import PoliteClient
 from acp_decisions.orchestrator import scrape_one
+from acp_decisions.taxonomy import seed_categories
 from acp_decisions.walker import fetch_all_case_ids
 
 
@@ -46,7 +48,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Comma-separated type codes (default: LH,PA,H)",
     )
 
-    sub.add_parser("classify", help="Classify refusal reasons via local LLM (stub)")
+    classify = sub.add_parser("classify", help="Classify refusal reasons via local LLM")
+    classify.add_argument(
+        "--ollama-url",
+        type=str,
+        default="http://localhost:11434",
+        help="Ollama base URL (default: http://localhost:11434)",
+    )
+    classify.add_argument(
+        "--model",
+        type=str,
+        default="llama3.2:3b",
+        help="Model name to use (default: llama3.2:3b)",
+    )
 
     args = parser.parse_args(argv)
     console = Console()
@@ -59,8 +73,7 @@ def main(argv: list[str] | None = None) -> int:
             type_codes = tuple(t.strip() for t in args.types.split(",") if t.strip())
             return _scrape_all(conn, type_codes, console)
         if args.cmd == "classify":
-            console.print("[yellow]classify: not yet wired (Task 13)[/]")
-            return 0
+            return _classify(conn, args.ollama_url, args.model, console)
         return 0
     finally:
         conn.close()
@@ -115,6 +128,21 @@ def _scrape_all(
 
     console.print(f"[green]done. ok={ok} fail={fail}[/]")
     return 0 if fail == 0 else 2
+
+
+def _classify(
+    conn: sqlite3.Connection,
+    ollama_url: str,
+    model: str,
+    console: Console,
+) -> int:
+    """Run the LLM over every unclassified refusal reason."""
+    seed_categories(conn)
+    console.print(f"[cyan]ollama: {ollama_url} model={model}[/]")
+    with OllamaClient(base_url=ollama_url, model=model) as client:
+        n = classify_unclassified(client, conn)
+    console.print(f"[green]classified {n} reason(s)[/]")
+    return 0
 
 
 if __name__ == "__main__":
