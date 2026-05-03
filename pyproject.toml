@@ -10,6 +10,9 @@ dependencies = [
     "rich>=13.9",
     "python-slugify>=8.0",
     "pypdf>=6.0",
+    "pypdfium2>=4.30",
+    "pytesseract>=0.3.13",
+    "pillow>=11",
 ]
 
 [project.optional-dependencies]

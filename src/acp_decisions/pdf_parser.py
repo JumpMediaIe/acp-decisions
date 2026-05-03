@@ -70,17 +70,98 @@ def parse_order_pdf(pdf_bytes: bytes) -> OrderParseResult:
     return OrderParseResult(abp_reference=abp, decision_verb=verb, reasons=reasons)
 
 
+_OCR_FALLBACK_THRESHOLD_CHARS = 500
+
+# UB-Mannheim's Windows installer puts tesseract in one of these paths by default.
+# pytesseract relies on tesseract being on PATH; we auto-detect to spare the user
+# the env-var dance.
+_WINDOWS_TESSERACT_PATHS = (
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+)
+
+
+def _configure_tesseract_path(pytesseract_module: object) -> None:
+    """Point pytesseract at the Tesseract binary if PATH isn't set up.
+
+    Honours the TESSERACT_CMD env var if set; otherwise tries the standard
+    Windows install paths. On Linux / macOS, leaves the default alone (PATH
+    typically works on those).
+    """
+    import os
+    import shutil
+
+    # If PATH already finds it, leave well alone.
+    if shutil.which("tesseract"):
+        return
+
+    env_path = os.environ.get("TESSERACT_CMD")
+    if env_path and os.path.exists(env_path):
+        pytesseract_module.pytesseract.tesseract_cmd = env_path  # type: ignore[attr-defined]
+        return
+
+    for path in _WINDOWS_TESSERACT_PATHS:
+        if os.path.exists(path):
+            pytesseract_module.pytesseract.tesseract_cmd = path  # type: ignore[attr-defined]
+            return
+
+
 def _extract_text(pdf_bytes: bytes) -> str:
     """Extract text from an Order PDF.
 
-    pypdf handles most ACP orders cleanly. Some orders (chiefly mid-2024+) have
-    a corrupted text layer — overlapping or wrongly-mapped fonts that no
-    text-only extractor (pypdf, pdfminer.six, pypdfium2) can linearise. Those
-    cases land with empty `reasons` here; the orchestrator records a
-    `pdf_no_text` scrape error so they're recoverable with OCR later.
+    Strategy:
+      1. Try pypdf (fast, handles ~80% of ACP orders cleanly).
+      2. If pypdf yields essentially nothing, fall back to OCR via Tesseract
+         (handles scanned-image orders + orders with a corrupted text layer).
+      3. If Tesseract isn't installed, return whatever pypdf gave us; the
+         orchestrator will log `pdf_no_text` so the case is recoverable later.
     """
+    text = _extract_with_pypdf(pdf_bytes)
+    if len(text.strip()) >= _OCR_FALLBACK_THRESHOLD_CHARS:
+        return text
+    ocr_text = _ocr_pdf(pdf_bytes)
+    return ocr_text if ocr_text else text
+
+
+def _extract_with_pypdf(pdf_bytes: bytes) -> str:
     reader = PdfReader(io.BytesIO(pdf_bytes))
     return "\n".join(page.extract_text() for page in reader.pages)
+
+
+def _ocr_pdf(pdf_bytes: bytes) -> str:
+    """Render each page to an image and OCR it.
+
+    Returns "" if Tesseract or its Python binding aren't available — letting
+    the caller decide how to handle the absence (we don't crash a scrape on
+    a single missing dep).
+    """
+    try:
+        import pypdfium2 as pdfium
+        import pytesseract
+    except ImportError:
+        return ""
+    _configure_tesseract_path(pytesseract)
+    try:
+        pdf = pdfium.PdfDocument(pdf_bytes)
+    except Exception:  # noqa: BLE001 — pdfium raises a wide variety
+        return ""
+    out: list[str] = []
+    try:
+        for page in pdf:
+            # 200 DPI is a good balance: typeset text reads cleanly, file size
+            # stays manageable. Lower DPIs lose serif detail; higher gives no
+            # accuracy gain on typeset documents.
+            bitmap = page.render(scale=200 / 72)
+            image = bitmap.to_pil()
+            try:
+                page_text = pytesseract.image_to_string(image)
+            except pytesseract.TesseractNotFoundError:
+                # Tesseract binary not on PATH — give up cleanly.
+                return ""
+            out.append(page_text)
+    finally:
+        pdf.close()
+    return "\n".join(out)
 
 
 def _strip_footers(text: str) -> str:
@@ -105,33 +186,94 @@ def _extract_decision_verb(text: str) -> str | None:
 
 
 def _extract_reasons(text: str) -> list[RefusalReason]:
-    """Find the numbered-list reasons section and split it into items."""
-    anchor_pos = _find_reasons_anchor(text)
-    if anchor_pos is None:
-        return []
-    body = text[anchor_pos:]
-    return _split_numbered_list(body)
+    """Find the reasons section and split it into items.
 
-
-def _find_reasons_anchor(text: str) -> int | None:
-    """Return the offset *after* the 'Reasons and Considerations' header whose
-    immediate next non-empty content begins a numbered list (item 1).
+    Two layouts are common in ACP orders:
+      - Numbered: "Reasons and Considerations\\n1. ...\\n2. ...\\n3. ..."
+      - Prose: "Reasons and Considerations\\n<paragraph>\\n\\n<paragraph>\\n\\n..."
+    Try numbered first; fall back to paragraph splitting if no list found.
     """
-    candidates: list[int] = []
-    for m in _REASONS_HEADER_RE.finditer(text):
-        candidates.append(m.end())
+    numbered_anchor = _find_numbered_anchor(text)
+    if numbered_anchor is not None:
+        body = text[numbered_anchor:]
+        items = _split_numbered_list(body)
+        if items:
+            return items
+
+    prose_anchor = _find_reasons_header(text)
+    if prose_anchor is None:
+        return []
+    return _split_prose(text[prose_anchor:])
+
+
+def _find_numbered_anchor(text: str) -> int | None:
+    """Offset of the '1.' that begins a numbered reasons list, if any.
+
+    Walks every 'Reasons and Considerations' header and picks the one whose
+    immediate follow-up text contains '1.'. The LAST such match wins —
+    long-form orders mention the header twice (legislative preamble, then
+    actual reasons).
+    """
+    candidates = [m.end() for m in _REASONS_HEADER_RE.finditer(text)]
     if not candidates:
         return None
-    # Prefer the LAST candidate that has a "1." within ~300 chars after the header.
-    # This handles long-form Orders that mention "Reasons and Considerations" first
-    # in a legislative-preamble section without numbered reasons.
+    # Look further than 300 chars — some orders have a substantial contextual
+    # preamble between the header and the actual "1." (citing legislation,
+    # development plan policies, etc.), but the numbered list still exists.
+    # 3000 covers every observed case without false-matching footers/signatures.
     chosen: int | None = None
     for end_pos in candidates:
-        window = text[end_pos : end_pos + 300]
+        window = text[end_pos : end_pos + 3000]
         first_item = re.search(r"(?m)^\s*1\.?\s+[A-Z]", window)
         if first_item is not None:
             chosen = end_pos + first_item.start()
     return chosen
+
+
+def _find_reasons_header(text: str) -> int | None:
+    """Offset just after the LAST 'Reasons and Considerations' header, regardless
+    of whether a numbered list follows."""
+    last: int | None = None
+    for m in _REASONS_HEADER_RE.finditer(text):
+        last = m.end()
+    return last
+
+
+# Markers that signal the end of the reasons section in a prose-style order.
+# We stop at whichever appears first.
+_PROSE_END_MARKERS = (
+    re.compile(r"(?im)^\s*Member\s+of\s+An\s+Bord\s+Plean\S*"),
+    re.compile(r"(?im)^\s*duly\s+authorised"),
+    re.compile(r"(?im)^\s*Dated\s+this\s+"),
+    re.compile(r"(?im)^\s*the\s+seal\s+of\s+the\s+Board"),
+)
+_MIN_PARAGRAPH_CHARS = 80
+
+
+def _split_prose(body: str) -> list[RefusalReason]:
+    """Split a prose-style reasons section into one RefusalReason per paragraph.
+
+    Paragraph boundaries: blank line. We trim everything from the first
+    end-of-section marker (signature, "Dated this", etc.). Short fragments
+    (signatures, page footers that survived the strip) are discarded.
+    """
+    end_pos = len(body)
+    for rx in _PROSE_END_MARKERS:
+        m = rx.search(body)
+        if m is not None:
+            end_pos = min(end_pos, m.start())
+    body = body[:end_pos]
+    paragraphs = re.split(r"\n\s*\n+", body)
+    reasons: list[RefusalReason] = []
+    for p in paragraphs:
+        cleaned = _clean_reason_text(p)
+        if len(cleaned) < _MIN_PARAGRAPH_CHARS:
+            continue
+        # Skip the literal header line if it survived the split.
+        if cleaned.lower().startswith("reasons and considerations"):
+            continue
+        reasons.append(RefusalReason(reason_number=len(reasons) + 1, raw_text=cleaned))
+    return reasons
 
 
 def _split_numbered_list(body: str) -> list[RefusalReason]:
