@@ -59,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         "--model",
         type=str,
         default=None,
-        help="Model name (default: gemma2:2b for ollama, gemini-2.5-flash for gemini)",
+        help="Model name (default: gemma4:e2b for ollama, gemini-2.5-flash for gemini)",
     )
     classify.add_argument(
         "--ollama-url",
@@ -146,7 +146,7 @@ def _classify(
     """Run the chosen LLM over every unclassified refusal reason."""
     seed_categories(conn)
     if provider == "ollama":
-        chosen_model = model or "gemma2:2b"
+        chosen_model = model or "gemma4:e2b"
         console.print(f"[cyan]ollama: {ollama_url} model={chosen_model}[/]")
         with OllamaClient(base_url=ollama_url, model=chosen_model) as client:
             n = classify_unclassified(client, conn)
