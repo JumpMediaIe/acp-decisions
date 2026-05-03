@@ -16,26 +16,24 @@ def test_cli_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert "ACP decisions scraper" in capsys.readouterr().out
 
 
-def test_cli_classify_no_gemini_key_returns_one(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Default provider is gemini; absent GEMINI_API_KEY, classify exits with rc=1."""
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+def test_cli_classify_default_uses_ollama(tmp_path: Path) -> None:
+    """Default provider is ollama; classify_unclassified gets called."""
     db = tmp_path / "test.db"
-    rc = main(["--db", str(db), "classify"])
-    assert rc == 1
+    with patch("acp_decisions.cli.classify_unclassified", return_value=0) as mock:
+        rc = main(["--db", str(db), "classify"])
+    assert rc == 0
+    assert mock.call_count == 1
     assert db.exists()
 
 
-def test_cli_classify_ollama_provider(
+def test_cli_classify_gemini_requires_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--provider ollama` reaches classify_unclassified; we mock that call."""
+    """`--provider gemini` without GEMINI_API_KEY exits with rc=1."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     db = tmp_path / "test.db"
-    with patch("acp_decisions.cli.classify_unclassified", return_value=0) as mock:
-        rc = main(["--db", str(db), "classify", "--provider", "ollama"])
-    assert rc == 0
-    assert mock.call_count == 1
+    rc = main(["--db", str(db), "classify", "--provider", "gemini"])
+    assert rc == 1
 
 
 def test_cli_scrape_requires_case_or_all(capsys: pytest.CaptureFixture[str]) -> None:

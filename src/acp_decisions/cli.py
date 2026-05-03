@@ -52,14 +52,14 @@ def main(argv: list[str] | None = None) -> int:
     classify.add_argument(
         "--provider",
         choices=["ollama", "gemini"],
-        default="gemini",
-        help="LLM provider (default: gemini)",
+        default="ollama",
+        help="LLM provider (default: ollama — local)",
     )
     classify.add_argument(
         "--model",
         type=str,
         default=None,
-        help="Model name (default: llama3.2:3b for ollama, gemini-2.5-flash for gemini)",
+        help="Model name (default: gemma2:2b for ollama, gemini-2.5-flash for gemini)",
     )
     classify.add_argument(
         "--ollama-url",
@@ -146,7 +146,7 @@ def _classify(
     """Run the chosen LLM over every unclassified refusal reason."""
     seed_categories(conn)
     if provider == "ollama":
-        chosen_model = model or "llama3.2:3b"
+        chosen_model = model or "gemma2:2b"
         console.print(f"[cyan]ollama: {ollama_url} model={chosen_model}[/]")
         with OllamaClient(base_url=ollama_url, model=chosen_model) as client:
             n = classify_unclassified(client, conn)
