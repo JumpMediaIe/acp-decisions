@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS refusal_reasons (
   case_id_url              INTEGER NOT NULL,
   reason_number            INTEGER NOT NULL,
   raw_text                 TEXT NOT NULL,
+  -- Structured entities extracted by the classifier (Option B). All optional.
+  summary                  TEXT,           -- one-sentence plain-English summary
+  dev_plan                 TEXT,           -- e.g. "Dublin City Development Plan 2022-2028"
+  policy_codes             TEXT,           -- JSON array: ["CPO 7.5", "Section 14.7.9"]
+  quantitative_violation   TEXT,           -- e.g. "145 units exceeds Z29 zoning limit"
+  statutory_test           TEXT,           -- e.g. "Habitats Directive Article 6"
   FOREIGN KEY (case_id_url) REFERENCES decisions(case_id_url) ON DELETE CASCADE
 );
 

@@ -11,6 +11,12 @@ class RefusalReason:
     raw_text: str
     # Optional id once persisted; classifier writes categories keyed on this
     id: int | None = None
+    # Structured entities extracted by the classifier (Option B). All optional.
+    summary: str | None = None
+    dev_plan: str | None = None
+    policy_codes: list[str] = field(default_factory=list)
+    quantitative_violation: str | None = None
+    statutory_test: str | None = None
 
 
 @dataclass

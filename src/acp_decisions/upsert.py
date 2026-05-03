@@ -106,6 +106,40 @@ def upsert_reasons(
     return inserted_ids
 
 
+def update_reason_entities(
+    conn: sqlite3.Connection,
+    reason_id: int,
+    *,
+    summary: str | None,
+    dev_plan: str | None,
+    policy_codes: list[str],
+    quantitative_violation: str | None,
+    statutory_test: str | None,
+) -> None:
+    """Persist classifier-extracted entities onto an existing refusal_reasons row."""
+    import json as _json
+    conn.execute(
+        """
+        UPDATE refusal_reasons
+           SET summary                = ?,
+               dev_plan               = ?,
+               policy_codes           = ?,
+               quantitative_violation = ?,
+               statutory_test         = ?
+         WHERE id = ?
+        """,
+        (
+            summary,
+            dev_plan,
+            _json.dumps(policy_codes) if policy_codes else None,
+            quantitative_violation,
+            statutory_test,
+            reason_id,
+        ),
+    )
+    conn.commit()
+
+
 def record_scrape_error(conn: sqlite3.Connection, error: ScrapeError) -> None:
     conn.execute(
         "INSERT INTO scrape_errors (case_id_url, error_class, message, occurred_at, resolved_at) "

@@ -20,12 +20,14 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
 
 import httpx
 
 from acp_decisions.taxonomy import Category, load_taxonomy
+from acp_decisions.upsert import update_reason_entities
 
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
@@ -157,15 +159,47 @@ def build_classification_prompt(reason_text: str, categories: list[Category]) ->
         f"- {c['id']} — {c['name']}: {c['description']}" for c in categories
     )
     return (
-        "You classify refusal reasons from Irish planning appeal decisions.\n\n"
+        "You analyse refusal reasons from Irish planning appeal decisions.\n\n"
         "Refusal reason text:\n"
         f'"""\n{reason_text.strip()}\n"""\n\n'
         "Available categories (id — name: description):\n"
         f"{cat_lines}\n\n"
-        "Pick 1 to 3 categories that best describe this reason. Use ONLY the IDs from the list above.\n"
-        "Use \"other\" only if no category fits.\n\n"
-        'Respond with a single JSON object in exactly this shape: {"category_ids": ["id1", "id2"]}'
+        "Tasks:\n"
+        "  1. Pick 1 to 3 category_ids from the list above. Use only those IDs.\n"
+        '     Use "other" only if no category fits.\n'
+        "  2. Write a one-sentence plain-English summary (`summary`) of why the\n"
+        "     proposal failed — readable by a non-planner. Avoid quoting jargon.\n"
+        "  3. Extract `dev_plan` — the development plan cited (e.g.\n"
+        '     "Dublin City Development Plan 2022-2028"), or null if none.\n'
+        "  4. Extract `policy_codes` — list of specific policy/section/objective\n"
+        '     codes mentioned (e.g. "CPO 7.5", "Section 14.7.9", "Objective CU025").\n'
+        "     Empty list if none.\n"
+        "  5. Extract `quantitative_violation` — short description of any\n"
+        '     dimension/threshold exceeded (e.g. "580 apartments on Z29-zoned land",\n'
+        '     "height of 7 storeys"). Null if none.\n'
+        "  6. Extract `statutory_test` — statutory test invoked if any (e.g.\n"
+        '     "Habitats Directive Article 6", "EIA screening"). Null if none.\n\n'
+        "Respond with a single JSON object in exactly this shape:\n"
+        "{\n"
+        '  "category_ids": ["id1", "id2"],\n'
+        '  "summary": "One sentence in plain English.",\n'
+        '  "dev_plan": "..." or null,\n'
+        '  "policy_codes": ["code1", "code2"],\n'
+        '  "quantitative_violation": "..." or null,\n'
+        '  "statutory_test": "..." or null\n'
+        "}"
     )
+
+
+@dataclass
+class ReasonAnalysis:
+    """Structured output of one classifier call."""
+    category_ids: list[str]
+    summary: str | None
+    dev_plan: str | None
+    policy_codes: list[str]
+    quantitative_violation: str | None
+    statutory_test: str | None
 
 
 def classify_reason(
@@ -175,27 +209,73 @@ def classify_reason(
 ) -> list[str]:
     """Return the LLM-picked category IDs for one refusal reason.
 
-    Falls back to ['other'] on any malformed response, empty list, or all-invalid
-    IDs — never returns an empty list.
+    Falls back to ['other'] on any malformed response. Kept as a thin wrapper
+    around analyse_reason so existing callers / tests keep working.
+    """
+    return analyse_reason(client, reason_text, categories).category_ids
+
+
+def analyse_reason(
+    client: LLMClient,
+    reason_text: str,
+    categories: list[Category],
+) -> ReasonAnalysis:
+    """Run the full classifier: categories + summary + entity extraction.
+
+    On any malformed response, returns a ReasonAnalysis with `category_ids=['other']`
+    and all entity fields None — the scraper should never crash on a single bad row.
     """
     prompt = build_classification_prompt(reason_text, categories)
     valid_ids = {c["id"] for c in categories}
     try:
         raw = client.generate(prompt)
         parsed = json.loads(raw)
-        ids = parsed.get("category_ids", [])
     except (json.JSONDecodeError, httpx.HTTPError, KeyError):
-        return ["other"]
+        return ReasonAnalysis(
+            category_ids=["other"],
+            summary=None,
+            dev_plan=None,
+            policy_codes=[],
+            quantitative_violation=None,
+            statutory_test=None,
+        )
+
+    ids = parsed.get("category_ids", []) if isinstance(parsed, dict) else []
     if not isinstance(ids, list):
-        return ["other"]
+        ids = []
     filtered = [i for i in ids if isinstance(i, str) and i in valid_ids]
-    return filtered or ["other"]
+    if not filtered:
+        filtered = ["other"]
+
+    pcs = parsed.get("policy_codes", []) if isinstance(parsed, dict) else []
+    if not isinstance(pcs, list):
+        pcs = []
+    pcs = [str(p) for p in pcs if isinstance(p, str) and p.strip()]
+
+    return ReasonAnalysis(
+        category_ids=filtered,
+        summary=_str_or_none(parsed.get("summary")) if isinstance(parsed, dict) else None,
+        dev_plan=_str_or_none(parsed.get("dev_plan")) if isinstance(parsed, dict) else None,
+        policy_codes=pcs,
+        quantitative_violation=_str_or_none(parsed.get("quantitative_violation")) if isinstance(parsed, dict) else None,
+        statutory_test=_str_or_none(parsed.get("statutory_test")) if isinstance(parsed, dict) else None,
+    )
+
+
+def _str_or_none(v: object) -> str | None:
+    """JSON values come in as str/None/other; coerce to a clean str-or-None."""
+    if isinstance(v, str):
+        s = v.strip()
+        return s if s and s.lower() not in ("null", "none", "n/a") else None
+    return None
 
 
 def classify_unclassified(client: LLMClient, conn: sqlite3.Connection) -> int:
-    """Classify every refusal reason that doesn't yet have a category. Returns count.
+    """Run the analyser over every refusal reason that doesn't yet have a category.
 
-    Updates the parent decision's `classified_at` once all of its reasons are done.
+    For each reason: assigns categories AND extracts the entity fields
+    (summary, dev_plan, policy_codes, quantitative_violation, statutory_test).
+    Updates the parent decision's `classified_at` once done.
     """
     categories = load_taxonomy()
     rows = conn.execute(
@@ -210,10 +290,19 @@ def classify_unclassified(client: LLMClient, conn: sqlite3.Connection) -> int:
     n = 0
     touched_cases: set[int] = set()
     for r in rows:
-        cat_ids = classify_reason(client, r["raw_text"], categories)
+        analysis = analyse_reason(client, r["raw_text"], categories)
         conn.executemany(
             "INSERT INTO reason_categories (reason_id, category_id) VALUES (?, ?)",
-            [(r["id"], cid) for cid in cat_ids],
+            [(r["id"], cid) for cid in analysis.category_ids],
+        )
+        update_reason_entities(
+            conn,
+            int(r["id"]),
+            summary=analysis.summary,
+            dev_plan=analysis.dev_plan,
+            policy_codes=analysis.policy_codes,
+            quantitative_violation=analysis.quantitative_violation,
+            statutory_test=analysis.statutory_test,
         )
         touched_cases.add(int(r["case_id_url"]))
         n += 1
