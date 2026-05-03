@@ -16,12 +16,26 @@ def test_cli_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert "ACP decisions scraper" in capsys.readouterr().out
 
 
-def test_cli_classify_subcommand_returns_zero(tmp_path: Path) -> None:
+def test_cli_classify_no_gemini_key_returns_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Default provider is gemini; absent GEMINI_API_KEY, classify exits with rc=1."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     db = tmp_path / "test.db"
     rc = main(["--db", str(db), "classify"])
-    assert rc == 0
-    # The DB file should exist (open_db ran on it)
+    assert rc == 1
     assert db.exists()
+
+
+def test_cli_classify_ollama_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--provider ollama` reaches classify_unclassified; we mock that call."""
+    db = tmp_path / "test.db"
+    with patch("acp_decisions.cli.classify_unclassified", return_value=0) as mock:
+        rc = main(["--db", str(db), "classify", "--provider", "ollama"])
+    assert rc == 0
+    assert mock.call_count == 1
 
 
 def test_cli_scrape_requires_case_or_all(capsys: pytest.CaptureFixture[str]) -> None:

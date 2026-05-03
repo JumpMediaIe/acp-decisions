@@ -17,7 +17,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from acp_decisions.classifier import OllamaClient, classify_unclassified
+from acp_decisions.classifier import GeminiClient, OllamaClient, classify_unclassified
 from acp_decisions.db import open_db
 from acp_decisions.http_client import PoliteClient
 from acp_decisions.orchestrator import scrape_one
@@ -48,18 +48,24 @@ def main(argv: list[str] | None = None) -> int:
         help="Comma-separated type codes (default: LH,PA,H)",
     )
 
-    classify = sub.add_parser("classify", help="Classify refusal reasons via local LLM")
+    classify = sub.add_parser("classify", help="Classify refusal reasons via LLM")
+    classify.add_argument(
+        "--provider",
+        choices=["ollama", "gemini"],
+        default="gemini",
+        help="LLM provider (default: gemini)",
+    )
+    classify.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Model name (default: llama3.2:3b for ollama, gemini-2.5-flash for gemini)",
+    )
     classify.add_argument(
         "--ollama-url",
         type=str,
         default="http://localhost:11434",
         help="Ollama base URL (default: http://localhost:11434)",
-    )
-    classify.add_argument(
-        "--model",
-        type=str,
-        default="llama3.2:3b",
-        help="Model name to use (default: llama3.2:3b)",
     )
 
     args = parser.parse_args(argv)
@@ -73,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
             type_codes = tuple(t.strip() for t in args.types.split(",") if t.strip())
             return _scrape_all(conn, type_codes, console)
         if args.cmd == "classify":
-            return _classify(conn, args.ollama_url, args.model, console)
+            return _classify(conn, args.provider, args.model, args.ollama_url, console)
         return 0
     finally:
         conn.close()
@@ -132,15 +138,27 @@ def _scrape_all(
 
 def _classify(
     conn: sqlite3.Connection,
+    provider: str,
+    model: str | None,
     ollama_url: str,
-    model: str,
     console: Console,
 ) -> int:
-    """Run the LLM over every unclassified refusal reason."""
+    """Run the chosen LLM over every unclassified refusal reason."""
     seed_categories(conn)
-    console.print(f"[cyan]ollama: {ollama_url} model={model}[/]")
-    with OllamaClient(base_url=ollama_url, model=model) as client:
-        n = classify_unclassified(client, conn)
+    if provider == "ollama":
+        chosen_model = model or "llama3.2:3b"
+        console.print(f"[cyan]ollama: {ollama_url} model={chosen_model}[/]")
+        with OllamaClient(base_url=ollama_url, model=chosen_model) as client:
+            n = classify_unclassified(client, conn)
+    else:  # gemini
+        chosen_model = model or "gemini-2.5-flash"
+        console.print(f"[cyan]gemini: model={chosen_model}[/]")
+        try:
+            with GeminiClient(model=chosen_model) as client:
+                n = classify_unclassified(client, conn)
+        except RuntimeError as e:
+            console.print(f"[red]{e}[/]")
+            return 1
     console.print(f"[green]classified {n} reason(s)[/]")
     return 0
 

@@ -1,9 +1,16 @@
-"""Classify ACP refusal reasons into taxonomy categories using a local LLM.
+"""Classify ACP refusal reasons into taxonomy categories using an LLM.
 
-We talk to Ollama (https://ollama.ai) over its HTTP API at
-http://localhost:11434/api/generate. The model is asked to pick 1-3 category
-IDs from our fixed taxonomy and return them as JSON. Hallucinated IDs are
-dropped; truly unrecognised reasons fall back to ['other'].
+Two providers are supported:
+
+  - Ollama (local) — http://localhost:11434/api/generate, default model
+    `llama3.2:3b`. Runs entirely on your machine; needs no API key.
+  - Gemini (Google AI Studio) — Generative Language API, default model
+    `gemini-2.5-flash`. Free at our scale; needs `GEMINI_API_KEY` env var.
+
+Both clients implement a `.generate(prompt) -> str` method that returns the
+model's raw JSON-formatted response. The classifier asks the model to pick
+1-3 category IDs from our fixed taxonomy. Hallucinated IDs are dropped;
+truly unrecognised reasons fall back to ['other'].
 
 The classifier is deliberately separate from the scraper: scraping fetches the
 canonical text once, and we can re-classify any time as the taxonomy evolves.
@@ -11,8 +18,10 @@ canonical text once, and we can re-classify any time as the taxonomy evolves.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
+from typing import Protocol
 
 import httpx
 
@@ -20,8 +29,18 @@ from acp_decisions.taxonomy import Category, load_taxonomy
 
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
-DEFAULT_MODEL = "llama3.2:3b"
+DEFAULT_OLLAMA_MODEL = "llama3.2:3b"
+DEFAULT_GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 DEFAULT_TIMEOUT_S = 120.0
+
+
+class LLMClient(Protocol):
+    """Anything with `.generate(prompt) -> str` works for the classifier."""
+
+    def generate(self, prompt: str) -> str: ...
+
+    def close(self) -> None: ...
 
 
 class OllamaClient:
@@ -31,7 +50,7 @@ class OllamaClient:
         self,
         *,
         base_url: str = DEFAULT_OLLAMA_URL,
-        model: str = DEFAULT_MODEL,
+        model: str = DEFAULT_OLLAMA_MODEL,
         timeout_s: float = DEFAULT_TIMEOUT_S,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
@@ -66,6 +85,72 @@ class OllamaClient:
         self.close()
 
 
+class GeminiClient:
+    """Minimal client for Google's Generative Language API with JSON output.
+
+    Uses the v1beta REST endpoint directly via httpx — avoids pulling in the
+    full `google-genai` SDK for one method. API key is read from the
+    GEMINI_API_KEY env var unless passed explicitly.
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        base_url: str = DEFAULT_GEMINI_URL,
+        model: str = DEFAULT_GEMINI_MODEL,
+        timeout_s: float = DEFAULT_TIMEOUT_S,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        key = api_key or os.environ.get("GEMINI_API_KEY")
+        if not key:
+            raise RuntimeError(
+                "GEMINI_API_KEY env var not set. "
+                "Get a free key at https://aistudio.google.com/app/apikey"
+            )
+        self._api_key = key
+        self._base_url = base_url
+        self._model = model
+        self._client = httpx.Client(
+            base_url=base_url,
+            timeout=timeout_s,
+            transport=transport,
+        )
+
+    def generate(self, prompt: str) -> str:
+        """POST /models/{model}:generateContent with JSON output; return raw text."""
+        body = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0,
+                "responseMimeType": "application/json",
+            },
+        }
+        resp = self._client.post(
+            f"/models/{self._model}:generateContent",
+            params={"key": self._api_key},
+            json=body,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        candidates = data.get("candidates") or []
+        if not candidates:
+            return ""
+        parts = candidates[0].get("content", {}).get("parts") or []
+        if not parts:
+            return ""
+        return parts[0].get("text", "")
+
+    def close(self) -> None:
+        self._client.close()
+
+    def __enter__(self) -> "GeminiClient":
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+
 def build_classification_prompt(reason_text: str, categories: list[Category]) -> str:
     """Compose the structured prompt sent to the model for one reason."""
     cat_lines = "\n".join(
@@ -84,7 +169,7 @@ def build_classification_prompt(reason_text: str, categories: list[Category]) ->
 
 
 def classify_reason(
-    client: OllamaClient,
+    client: LLMClient,
     reason_text: str,
     categories: list[Category],
 ) -> list[str]:
@@ -107,7 +192,7 @@ def classify_reason(
     return filtered or ["other"]
 
 
-def classify_unclassified(client: OllamaClient, conn: sqlite3.Connection) -> int:
+def classify_unclassified(client: LLMClient, conn: sqlite3.Connection) -> int:
     """Classify every refusal reason that doesn't yet have a category. Returns count.
 
     Updates the parent decision's `classified_at` once all of its reasons are done.

@@ -7,6 +7,7 @@ import sqlite3
 import httpx
 
 from acp_decisions.classifier import (
+    GeminiClient,
     OllamaClient,
     build_classification_prompt,
     classify_reason,
@@ -126,3 +127,56 @@ def test_classify_unclassified_skips_already_classified(temp_db: sqlite3.Connect
     client = OllamaClient(transport=transport)
     n = classify_unclassified(client, temp_db)
     assert n == 0  # already classified — skipped
+
+
+# ---- Gemini client ----------------------------------------------------------
+
+
+def _gemini_transport(json_body: str) -> httpx.MockTransport:
+    """Mock Gemini /v1beta/models/.../generateContent that returns json_body as the model's text."""
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert ":generateContent" in req.url.path
+        return httpx.Response(
+            200,
+            json={"candidates": [{"content": {"parts": [{"text": json_body}]}}]},
+        )
+    return httpx.MockTransport(handler)
+
+
+def test_gemini_client_generates_with_api_key() -> None:
+    transport = _gemini_transport(
+        json.dumps({"category_ids": ["zoning_contravention"]})
+    )
+    client = GeminiClient(api_key="fake-key", transport=transport)
+    text = client.generate("test prompt")
+    assert "zoning_contravention" in text
+
+
+def test_gemini_client_raises_without_key(monkeypatch) -> None:
+    """No API key → RuntimeError pointing the user at the AI Studio page."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    try:
+        GeminiClient()
+    except RuntimeError as e:
+        assert "GEMINI_API_KEY" in str(e)
+        assert "aistudio.google.com" in str(e)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+
+def test_gemini_classify_reason_returns_valid_ids() -> None:
+    transport = _gemini_transport(
+        json.dumps({"category_ids": ["overlooking_privacy"]})
+    )
+    client = GeminiClient(api_key="fake-key", transport=transport)
+    from acp_decisions.taxonomy import load_taxonomy
+    result = classify_reason(client, "overlooking neighbours", load_taxonomy())
+    assert result == ["overlooking_privacy"]
+
+
+def test_gemini_handles_empty_candidates() -> None:
+    """Gemini sometimes returns candidates=[] when content is filtered."""
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"candidates": []})
+    client = GeminiClient(api_key="fake-key", transport=httpx.MockTransport(handler))
+    assert client.generate("hi") == ""
