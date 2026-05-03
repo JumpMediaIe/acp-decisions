@@ -115,6 +115,19 @@ def _attach_refusal_reasons(
     decision.refusal_reasons = result.reasons
     if result.abp_reference is not None:
         decision.abp_reference = result.abp_reference
+    # If we got no reasons from a refused case's order PDF, the Order is most
+    # likely a scanned image (pypdf yields empty text). Log this so the user
+    # can see how many cases need OCR.
+    if not result.reasons:
+        record_scrape_error(
+            conn,
+            ScrapeErrorRow(
+                error_class="pdf_no_text",
+                occurred_at=now,
+                case_id_url=decision.case_id_url,
+                message=f"order PDF yielded no extractable reasons: {order.url}",
+            ),
+        )
 
 
 def _now_iso() -> str:
