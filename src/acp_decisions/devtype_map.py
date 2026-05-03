@@ -14,6 +14,14 @@ import re
 
 # Order matters — more specific patterns first.
 _PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    # Large multi-unit residential developments. Match BEFORE the single-dwelling
+    # patterns so descriptions like "construction of 138 no. residential units
+    # (100 no. houses and 38 no. apartments)" don't fall through to new_house_rural.
+    (re.compile(r"\b\d{2,4}\s*(?:no\.?\s*)?(?:apartments?|residential\s+units?|dwelling\s+units?|dwellings?|units)\b", re.I), "large_residential_development"),
+    (re.compile(r"\blarge[-\s]scale\s+(?:residential\s+)?development", re.I), "large_residential_development"),
+    (re.compile(r"\bstrategic\s+housing\s+development\b", re.I), "large_residential_development"),
+    (re.compile(r"\bbuild[-\s]to[-\s]rent\b", re.I), "large_residential_development"),
+
     # Extensions
     (re.compile(r"\bside\s+(?:and\s+rear|extension)", re.I),  "house_extension_side"),
     (re.compile(r"\b(?:rear|two[-\s]storey|single[-\s]storey)\s+extension", re.I), "house_extension_rear"),
