@@ -71,6 +71,14 @@ def parse_order_pdf(pdf_bytes: bytes) -> OrderParseResult:
 
 
 def _extract_text(pdf_bytes: bytes) -> str:
+    """Extract text from an Order PDF.
+
+    pypdf handles most ACP orders cleanly. Some orders (chiefly mid-2024+) have
+    a corrupted text layer — overlapping or wrongly-mapped fonts that no
+    text-only extractor (pypdf, pdfminer.six, pypdfium2) can linearise. Those
+    cases land with empty `reasons` here; the orchestrator records a
+    `pdf_no_text` scrape error so they're recoverable with OCR later.
+    """
     reader = PdfReader(io.BytesIO(pdf_bytes))
     return "\n".join(page.extract_text() for page in reader.pages)
 
