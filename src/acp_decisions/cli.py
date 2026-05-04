@@ -26,8 +26,16 @@ from acp_decisions.walker import fetch_all_case_ids
 
 
 # ACP type codes observed in the listings UI as of 2026-05.
-# Add more here when ACP exposes new ones.
-DEFAULT_TYPE_CODES: tuple[str, ...] = ("LH", "PA", "H")
+# Empirically:
+#   PL -- main "planning" appeal type, ~500 cases/year (server-capped at 500)
+#   PA -- planning appeals, smaller / different category
+#   LH -- large housing
+#   CH -- ~70-80 cases/year
+#   MA -- 0-3 cases/year
+#   H  -- empty
+# Order doesn't matter for correctness, but the largest types first means we
+# get useful coverage even if the scrape gets interrupted.
+DEFAULT_TYPE_CODES: tuple[str, ...] = ("PL", "LH", "PA", "CH", "MA", "H")
 
 DEFAULT_DB_PATH = Path("acp.db")
 
@@ -46,6 +54,14 @@ def main(argv: list[str] | None = None) -> int:
         type=str,
         default=",".join(DEFAULT_TYPE_CODES),
         help="Comma-separated type codes (default: LH,PA,H)",
+    )
+    scrape.add_argument(
+        "--from-year",
+        type=int,
+        default=None,
+        metavar="YYYY",
+        help="Walk each (type, year) combo from YYYY through current year. "
+        "Use for multi-year backfill, e.g. --from-year 2021 for the past 5 years.",
     )
 
     classify = sub.add_parser("classify", help="Classify refusal reasons via LLM")
@@ -77,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.case is not None:
                 return _scrape_one(conn, args.case, console)
             type_codes = tuple(t.strip() for t in args.types.split(",") if t.strip())
-            return _scrape_all(conn, type_codes, console)
+            return _scrape_all(conn, type_codes, args.from_year, console)
         if args.cmd == "classify":
             return _classify(conn, args.provider, args.model, args.ollama_url, console)
         return 0
@@ -101,12 +117,24 @@ def _scrape_one(conn: sqlite3.Connection, case_id: int, console: Console) -> int
 def _scrape_all(
     conn: sqlite3.Connection,
     type_codes: tuple[str, ...],
+    from_year: int | None,
     console: Console,
 ) -> int:
     """Walk every listing, scrape every NEW case (skip ones already in DB)."""
+    from datetime import date as _date
+
+    years: list[int] | None = None
+    if from_year is not None:
+        years = list(range(from_year, _date.today().year + 1))
+
     with PoliteClient() as client:
-        console.print(f"[cyan]walking listings: {', '.join(type_codes)}[/]")
-        all_ids = fetch_all_case_ids(client, type_codes)
+        if years:
+            console.print(
+                f"[cyan]walking listings: types={', '.join(type_codes)} years={years[0]}-{years[-1]}[/]"
+            )
+        else:
+            console.print(f"[cyan]walking listings: {', '.join(type_codes)}[/]")
+        all_ids = fetch_all_case_ids(client, type_codes, years=years)
         console.print(f"  discovered {len(all_ids)} case(s)")
 
         existing = {

@@ -50,6 +50,7 @@ class PoliteClient:
             timeout=timeout_s,
             headers={"User-Agent": user_agent},
             transport=transport,
+            follow_redirects=True,  # ACP listings 302 to a single case when there's only one match
         )
 
     def _wait(self) -> None:
