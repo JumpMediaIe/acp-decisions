@@ -24,3 +24,4 @@ Thumbs.db
 
 # DO NOT ignore data/acp.db — it IS the deliverable, intentionally committed
 # DO NOT ignore taxonomy.yaml — it IS configuration, intentionally committed
+logs/

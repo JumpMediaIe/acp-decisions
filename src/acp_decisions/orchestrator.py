@@ -73,6 +73,14 @@ def scrape_one(
         )
         return None
 
+    # Skip pending / not-yet-decided cases. ACP listings include cases
+    # whose Decision is "Case is due to be decided by 24/08/2021" — these
+    # have no Date Signed yet (decision_date == "") and aren't useful in a
+    # decisions archive. They'll be picked up automatically on a future
+    # scrape once ACP records the actual decision.
+    if not decision.decision_date:
+        return None
+
     decision.decision_outcome = normalise_outcome(decision.decision_outcome_raw)
     decision.county = map_county(decision.county_raw)
     decision.development_type_id = map_devtype(decision.development_type_raw)
