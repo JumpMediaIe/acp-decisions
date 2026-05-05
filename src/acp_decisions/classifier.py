@@ -243,14 +243,27 @@ def analyse_reason(
     ids = parsed.get("category_ids", []) if isinstance(parsed, dict) else []
     if not isinstance(ids, list):
         ids = []
-    filtered = [i for i in ids if isinstance(i, str) and i in valid_ids]
+    # Dedupe (preserving order) — Gemma occasionally returns the same ID twice,
+    # which would violate the composite PK on reason_categories(reason_id, category_id).
+    seen_ids: set[str] = set()
+    filtered: list[str] = []
+    for i in ids:
+        if isinstance(i, str) and i in valid_ids and i not in seen_ids:
+            seen_ids.add(i)
+            filtered.append(i)
     if not filtered:
         filtered = ["other"]
 
     pcs = parsed.get("policy_codes", []) if isinstance(parsed, dict) else []
     if not isinstance(pcs, list):
         pcs = []
-    pcs = [str(p) for p in pcs if isinstance(p, str) and p.strip()]
+    seen_pcs: set[str] = set()
+    pcs_clean: list[str] = []
+    for p in pcs:
+        if isinstance(p, str) and p.strip() and p.strip() not in seen_pcs:
+            seen_pcs.add(p.strip())
+            pcs_clean.append(p.strip())
+    pcs = pcs_clean
 
     return ReasonAnalysis(
         category_ids=filtered,
