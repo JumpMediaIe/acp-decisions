@@ -146,21 +146,34 @@ def _scrape_all(
             f"  {len(new_ids)} new, {len(all_ids) - len(new_ids)} already scraped"
         )
 
-        ok, fail = 0, 0
+        ok, fail, skipped = 0, 0, 0
         for cid in new_ids:
             try:
                 d = scrape_one(client, conn, cid)
-                if d is None:
-                    fail += 1
-                else:
+                if d is not None:
                     ok += 1
                     if ok % 25 == 0:
                         console.print(f"  progress: {ok}/{len(new_ids)}")
+                else:
+                    # scrape_one returns None for two reasons: a real failure
+                    # (logged a scrape_errors row) or an intentional skip
+                    # (pending case with no decision_date yet — orchestrator
+                    # silently returns None). Distinguish by checking whether
+                    # a scrape_error was just recorded for this case.
+                    has_err = conn.execute(
+                        "SELECT 1 FROM scrape_errors WHERE case_id_url = ? LIMIT 1",
+                        (cid,),
+                    ).fetchone() is not None
+                    if has_err:
+                        fail += 1
+                    else:
+                        skipped += 1
             except Exception as e:  # noqa: BLE001 — keep walking
                 console.print(f"[red]case {cid}: {e}[/]")
                 fail += 1
 
-    console.print(f"[green]done. ok={ok} fail={fail}[/]")
+    console.print(f"[green]done. ok={ok} fail={fail} skipped={skipped}[/]")
+    # Skips (pending cases) are not failures — only real errors flip exit code.
     return 0 if fail == 0 else 2
 
 
