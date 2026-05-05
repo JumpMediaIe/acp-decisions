@@ -60,9 +60,19 @@ uv run pytest
 
 ## How the data is updated live
 
-1. The weekly GitHub Actions cron (`.github/workflows/scrape.yml`) runs `acp scrape --all` every Thursday and commits the updated `acp.db` back to `main`.
-2. The maintainer periodically runs `acp classify` locally (Ollama can't run on the CI runner).
-3. The maintainer triggers a Vercel rebuild on planningcheck.ie to pick up the fresh DB.
+Every Thursday at 09:00 a Windows scheduled task on the maintainer's laptop
+runs `scripts/weekly-update.ps1`, which scrapes new cases, classifies them
+locally with Gemma 4 e2b via Ollama, copies `acp.db` into the
+`irish-planning-tool` repo, and pushes — Vercel auto-deploys planningcheck.ie
+with the fresh data.
+
+**Full operational guide: [`docs/operations.md`](docs/operations.md)** —
+covers what runs where, log locations, troubleshooting, how to run a refresh
+manually, how to disable the schedule, and how to reinstall on a new laptop.
+
+A GitHub Actions cron (`.github/workflows/scrape.yml`) is also configured but
+not currently in use — it can scrape, but can't run the local-LLM classifier.
+The Windows scheduled task is the active automation.
 
 ## License
 
