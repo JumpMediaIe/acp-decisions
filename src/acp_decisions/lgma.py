@@ -24,6 +24,8 @@ from typing import Any
 
 import httpx
 
+from acp_decisions.devtype_map import map_devtype
+
 _FEATURESERVER_URL = (
     "https://services.arcgis.com/NzlPQPKn5QF9v2US/"
     "arcgis/rest/services/IrishPlanningApplications/FeatureServer/0/query"
@@ -149,11 +151,13 @@ def _upsert_features(
     rows = []
     for feat in features:
         a = feat.get("attributes", {})
+        desc = a.get("DevelopmentDescription") or ""
+        dev_type_id = map_devtype(desc) if desc else None
         rows.append((
             a.get("OBJECTID"),
             a.get("PlanningAuthority") or "",
             a.get("ApplicationNumber") or "",
-            a.get("DevelopmentDescription"),
+            desc or None,
             a.get("DevelopmentAddress"),
             a.get("DevelopmentPostcode"),
             a.get("ApplicationStatus"),
@@ -179,6 +183,7 @@ def _upsert_features(
             a.get("ITMEasting"),
             a.get("ITMNorthing"),
             fetched_at,
+            dev_type_id,
         ))
     conn.executemany(
         """
@@ -190,8 +195,9 @@ def _upsert_features(
             received_date, decision_date, decision_due_date, grant_date,
             expiry_date, appeal_ref_number, appeal_status, appeal_decision,
             appeal_decision_date, appeal_submitted_date, link_app_details,
-            one_off_kpi, itm_easting, itm_northing, fetched_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            one_off_kpi, itm_easting, itm_northing, fetched_at,
+            development_type_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
     )

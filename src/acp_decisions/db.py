@@ -19,6 +19,11 @@ _PENDING_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("quantitative_violation", "TEXT"),
         ("statutory_test", "TEXT"),
     ],
+    "planning_applications": [
+        # Mapped DevelopmentTypeId derived from `development_description`
+        # via devtype_map.py. Backfilled on lgma-sync.
+        ("development_type_id", "TEXT"),
+    ],
 }
 
 
