@@ -80,6 +80,10 @@ Run-Native 'Scrape new ACP cases' 'uv' @('run','acp','--db','acp.db','scrape','-
 Set-Location $AcpRepo
 Run-Native 'Classify unclassified reasons (gemma4:e2b)' 'uv' @('run','acp','--db','acp.db','classify')
 
+# --- 2b. LGMA sync (council-level refusals + appealed cases) --------------
+Set-Location $AcpRepo
+Run-Native 'Sync LGMA national planning-applications dataset' 'uv' @('run','acp','--db','acp.db','lgma-sync')
+
 # --- 3. copy db ------------------------------------------------------------
 Log '[start] Copy acp.db into website repo'
 Copy-Item -Path $DbSrc -Destination $DbDst -Force

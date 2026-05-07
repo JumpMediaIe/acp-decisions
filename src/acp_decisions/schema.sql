@@ -80,6 +80,48 @@ CREATE INDEX IF NOT EXISTS idx_decisions_abp_ref  ON decisions(abp_reference);
 CREATE INDEX IF NOT EXISTS idx_reasons_case       ON refusal_reasons(case_id_url);
 CREATE INDEX IF NOT EXISTS idx_documents_case     ON documents(case_id_url);
 
+-- Council-level planning applications (LGMA national dataset, fetched via ArcGIS REST).
+-- Separate from `decisions` (which is ACP appeals only). This table is the
+-- upstream source — local-authority decisions, ~492k total nationally,
+-- ~50k of which are refusals.
+CREATE TABLE IF NOT EXISTS planning_applications (
+  object_id              INTEGER PRIMARY KEY,
+  planning_authority     TEXT NOT NULL,         -- "Carlow County Council"
+  application_number     TEXT NOT NULL,
+  development_description TEXT,
+  development_address    TEXT,
+  development_postcode   TEXT,
+  application_status     TEXT,
+  application_type       TEXT,
+  decision               TEXT,                  -- "REFUSED", "GRANTED", "GRANT WITH CONDITIONS", etc.
+  land_use_code          TEXT,
+  area_of_site           REAL,
+  num_residential_units  INTEGER,
+  one_off_house          TEXT,                  -- "Y"/"N"/blank — single-house indicator
+  floor_area             REAL,
+  received_date          TEXT,
+  decision_date          TEXT,
+  decision_due_date      TEXT,
+  grant_date             TEXT,
+  expiry_date            TEXT,
+  appeal_ref_number      TEXT,                  -- e.g. "ABP305059-19" — links to ACP `decisions.abp_reference`
+  appeal_status          TEXT,
+  appeal_decision        TEXT,
+  appeal_decision_date   TEXT,
+  appeal_submitted_date  TEXT,
+  link_app_details       TEXT,                  -- URL to the council's page for this application
+  one_off_kpi            TEXT,
+  itm_easting            REAL,
+  itm_northing           REAL,
+  fetched_at             TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pa_authority      ON planning_applications(planning_authority);
+CREATE INDEX IF NOT EXISTS idx_pa_decision       ON planning_applications(decision);
+CREATE INDEX IF NOT EXISTS idx_pa_decision_date  ON planning_applications(decision_date);
+CREATE INDEX IF NOT EXISTS idx_pa_appeal_ref     ON planning_applications(appeal_ref_number);
+CREATE INDEX IF NOT EXISTS idx_pa_one_off_house  ON planning_applications(one_off_house);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS decisions_fts USING fts5(
   case_id_url UNINDEXED,
   abp_reference UNINDEXED,

@@ -20,6 +20,7 @@ from rich.console import Console
 from acp_decisions.classifier import GeminiClient, OllamaClient, classify_unclassified
 from acp_decisions.db import open_db
 from acp_decisions.http_client import PoliteClient
+from acp_decisions.lgma import fetch_planning_applications
 from acp_decisions.orchestrator import scrape_one
 from acp_decisions.taxonomy import seed_categories
 from acp_decisions.walker import fetch_all_case_ids
@@ -64,6 +65,17 @@ def main(argv: list[str] | None = None) -> int:
         "Use for multi-year backfill, e.g. --from-year 2021 for the past 5 years.",
     )
 
+    lgma = sub.add_parser(
+        "lgma-sync",
+        help="Sync council-level planning applications from the LGMA national dataset",
+    )
+    lgma.add_argument(
+        "--where",
+        type=str,
+        default=None,
+        help="Override the default WHERE clause (default: refusals + appealed cases)",
+    )
+
     classify = sub.add_parser("classify", help="Classify refusal reasons via LLM")
     classify.add_argument(
         "--provider",
@@ -94,6 +106,8 @@ def main(argv: list[str] | None = None) -> int:
                 return _scrape_one(conn, args.case, console)
             type_codes = tuple(t.strip() for t in args.types.split(",") if t.strip())
             return _scrape_all(conn, type_codes, args.from_year, console)
+        if args.cmd == "lgma-sync":
+            return _lgma_sync(conn, args.where, console)
         if args.cmd == "classify":
             return _classify(conn, args.provider, args.model, args.ollama_url, console)
         return 0
@@ -201,6 +215,28 @@ def _classify(
             console.print(f"[red]{e}[/]")
             return 1
     console.print(f"[green]classified {n} reason(s)[/]")
+    return 0
+
+
+def _lgma_sync(conn: sqlite3.Connection, where: str | None, console: Console) -> int:
+    """Sync the LGMA national planning-applications dataset."""
+    from acp_decisions.lgma import DEFAULT_WHERE
+    chosen_where = where or DEFAULT_WHERE
+    console.print(f"[cyan]LGMA sync: where={chosen_where!r}[/]")
+
+    state = {"total": 0, "last_print": 0}
+    def cb(kind: str, n: int) -> None:
+        if kind == "count":
+            state["total"] = n
+            console.print(f"  matched {n:,} features")
+        elif kind == "page":
+            # Print every ~5000 features so the log stays readable
+            if n - state["last_print"] >= 5000 or n == state["total"]:
+                console.print(f"  progress: {n:,}/{state['total']:,}")
+                state["last_print"] = n
+
+    n = fetch_planning_applications(conn, where=chosen_where, progress_callback=cb)
+    console.print(f"[green]synced {n:,} planning application(s)[/]")
     return 0
 
 
