@@ -116,6 +116,38 @@ CREATE TABLE IF NOT EXISTS planning_applications (
   fetched_at             TEXT NOT NULL
 );
 
+-- Refusal reasons fetched from council portals (currently agileapplications.ie).
+-- Linked to planning_applications via object_id (the LGMA OBJECTID).
+-- Same shape as `refusal_reasons` (ACP appeals) so the classifier can run
+-- entity extraction on it identically.
+CREATE TABLE IF NOT EXISTS council_refusal_reasons (
+  id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+  object_id                INTEGER NOT NULL,
+  reason_number            INTEGER NOT NULL,
+  short_prescription       TEXT,
+  raw_text                 TEXT NOT NULL,
+  -- Same entity fields as refusal_reasons; populated by the classifier
+  summary                  TEXT,
+  dev_plan                 TEXT,
+  policy_codes             TEXT,                -- JSON array as TEXT
+  quantitative_violation   TEXT,
+  statutory_test           TEXT,
+  fetched_at               TEXT NOT NULL,
+  classified_at            TEXT,
+  FOREIGN KEY (object_id) REFERENCES planning_applications(object_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crr_object_id ON council_refusal_reasons(object_id);
+
+-- Tracks council applications we've already attempted (success or empty) so the
+-- scraper can resume incrementally without re-fetching every week.
+CREATE TABLE IF NOT EXISTS council_reasons_fetch (
+  object_id     INTEGER PRIMARY KEY,
+  fetched_at    TEXT NOT NULL,
+  reasons_count INTEGER NOT NULL,
+  error_message TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_pa_authority      ON planning_applications(planning_authority);
 CREATE INDEX IF NOT EXISTS idx_pa_decision       ON planning_applications(decision);
 CREATE INDEX IF NOT EXISTS idx_pa_decision_date  ON planning_applications(decision_date);
