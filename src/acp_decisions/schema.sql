@@ -139,6 +139,17 @@ CREATE TABLE IF NOT EXISTS council_refusal_reasons (
 
 CREATE INDEX IF NOT EXISTS idx_crr_object_id ON council_refusal_reasons(object_id);
 
+-- Many-to-many: council refusal reasons → taxonomy categories.
+-- Mirrors `reason_categories` (which exists for ACP appeals) so analytics
+-- queries can be uniform across both archives.
+CREATE TABLE IF NOT EXISTS council_reason_categories (
+  reason_id   INTEGER NOT NULL,
+  category_id TEXT NOT NULL,
+  PRIMARY KEY (reason_id, category_id),
+  FOREIGN KEY (reason_id) REFERENCES council_refusal_reasons(id) ON DELETE CASCADE,
+  FOREIGN KEY (category_id) REFERENCES categories(id)
+);
+
 -- Tracks council applications we've already attempted (success or empty) so the
 -- scraper can resume incrementally without re-fetching every week.
 CREATE TABLE IF NOT EXISTS council_reasons_fetch (

@@ -94,6 +94,10 @@ Run-Native 'Fetch council refusal reasons' 'uv' @('run','python','scripts/fetch-
 Set-Location $AcpRepo
 Run-Native 'Classify new council reasons' 'uv' @('run','python','scripts/classify-council-reasons.py','--db','acp.db')
 
+# --- 2e. Categorise new council reasons (taxonomy assignment) -------------
+Set-Location $AcpRepo
+Run-Native 'Categorise new council reasons' 'uv' @('run','python','scripts/categorize-council-reasons.py','--db','acp.db')
+
 # --- 3. copy db ------------------------------------------------------------
 Log '[start] Copy acp.db into website repo'
 Copy-Item -Path $DbSrc -Destination $DbDst -Force
