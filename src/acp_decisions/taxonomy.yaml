@@ -4,6 +4,10 @@
 # Keep IDs stable. Editing labels/descriptions is fine; renaming an ID would
 # orphan existing reason_categories rows. Add new categories at the bottom.
 #
+# Every description should be plain-language with a real-world example, so
+# someone reading the live site (not a planning professional) understands
+# exactly what the category covers.
+#
 # Groups give the analytics layer a way to roll up — e.g. "show me how many
 # refusals in 2025 cited any 'planning_policy' issue."
 
@@ -13,196 +17,324 @@ categories:
     name: Material contravention of zoning objective
     group: planning_policy
     description: >
-      Proposed use or scale conflicts with the site's zoning objective in the
-      local development plan (e.g. residential on Z29 amenity-zoned land).
+      The proposed use doesn't match what the local development plan says the
+      land is for. Every parcel of land in Ireland is zoned (residential,
+      industrial, agricultural, amenity, etc.). Building outside that zone is
+      one of the easiest grounds for refusal.
+    example: >
+      Building 50 apartments on land zoned 'open space and amenity' (Z29 in
+      Dublin City), or putting a commercial unit on agricultural-zoned land.
 
   - id: development_plan_contravention
     name: Material contravention of development plan
     group: planning_policy
     description: >
-      Conflicts with a specific policy or objective in the development plan
-      other than the zoning objective itself.
+      Conflicts with a specific named policy or objective in the local
+      development plan — separate from the zoning itself. Every council
+      publishes a 5-7 year plan with hundreds of objectives. If your
+      proposal breaks one, you can be refused.
+    example: >
+      Wicklow County Development Plan objective CPO 7.5 requires social
+      infrastructure audits for big developments — a refusal might cite
+      'materially contravenes CPO 7.5'.
 
   - id: rural_housing_policy
     name: Rural housing policy non-compliance
     group: planning_policy
     description: >
-      Applicant fails to demonstrate rural housing need, social/economic ties,
-      or family-member criteria as required by the rural housing policy.
+      Most councils restrict who can build a one-off house in the
+      countryside — typically you need to demonstrate you have a real
+      'housing need' tied to the area (you grew up there, work the family
+      farm, etc.) and you don't already own a home nearby. If you can't
+      show that, the application is refused.
+    example: >
+      Someone from Dublin buying a rural site outside their home area to
+      build a holiday/retirement home — usually refused as 'urban-generated
+      rural housing'.
 
   - id: premature_to_plan_review
     name: Premature to development plan review
     group: planning_policy
     description: >
-      Decision deferred or refused on the grounds that the underlying plan is
-      under review and a decision now would prejudice the outcome.
+      The current development plan is being rewritten and the council
+      doesn't want to set a precedent before the new plan is finalised.
+      Application gets refused as 'premature' — basically 'come back when
+      the new plan is in place'.
+    example: >
+      Filing a 200-unit application six months before a council adopts
+      a new development plan that's expected to change the zoning of the site.
 
   - id: setting_precedent
     name: Would set undesirable precedent
     group: planning_policy
     description: >
-      Granting permission would prejudice future planning decisions in the area
-      or set a precedent at odds with stated objectives.
+      Granting this would invite similar applications nearby and undermine
+      the planning policy for the area. Often used for one-off rural houses
+      where the area is already saturated with isolated homes.
+    example: >
+      A rural house refusal saying 'granting permission would lead to
+      ribbon development along this country road'.
 
   - id: proper_planning_and_sustainable_development
     name: Contrary to proper planning and sustainable development
     group: planning_policy
     description: >
-      The catch-all statutory phrase, used either alone or in addition to a
-      specific reason. Tagged when the order's wording explicitly invokes it.
+      A boilerplate legal phrase — appears at the end of nearly every
+      refusal as a wrap-up statement. By itself it doesn't tell you what
+      specifically went wrong. Look for the OTHER categories on the same
+      reason — those are the substantive issue.
+    example: >
+      You'll see this paired with something like 'visual impact' or 'rural
+      housing policy' — those are the real reasons.
 
   # === Residential amenity ===
   - id: overlooking_privacy
     name: Overlooking / loss of privacy
     group: residential_amenity
     description: >
-      Windows, balconies, or terraces directly overlook neighbouring private
-      space at distances below the standard separation thresholds.
+      Windows, balconies or terraces look directly into a neighbour's
+      garden, kitchen or bedroom. Standard separation distances are
+      typically 22 metres between facing rear windows; closer than that
+      and overlooking is a problem.
+    example: >
+      A first-floor extension with a side window 8 metres from the
+      neighbour's bedroom — refused for 'serious overlooking'.
 
   - id: overshadowing_daylight
     name: Overshadowing / daylight / sunlight
     group: residential_amenity
     description: >
-      Loss of daylight, sunlight, or solar gain to neighbouring properties or
-      gardens.
+      The new building blocks too much sunlight or daylight from
+      neighbouring houses, gardens, or amenity spaces. Councils use
+      BRE-style guidelines on hours of sunlight retained.
+    example: >
+      A two-storey rear extension on a south-facing site that would shade
+      the entire neighbour's garden through winter.
 
   - id: overbearing_visual_impact
     name: Overbearing / dominant on neighbours
     group: residential_amenity
     description: >
-      Mass, height, or proximity creates an overbearing or dominant relationship
-      with neighbouring buildings.
+      The proposal's bulk, height or proximity dwarfs the neighbouring
+      property. Different from overlooking — this is about visual mass and
+      the feeling of being 'loomed over'.
+    example: >
+      A flat-roofed two-storey extension built right up to the boundary,
+      with a blank wall facing the neighbour.
 
   - id: substandard_residential_amenity
     name: Substandard residential amenity for occupants
     group: residential_amenity
     description: >
-      Internal layouts, dual-aspect ratios, room sizes, private open space, or
-      apartment mix fail current standards.
+      The homes themselves don't meet quality standards: rooms too small,
+      not enough light, no private open space, poor apartment mix (too many
+      one-bed studios), inadequate storage, etc.
+    example: >
+      An apartment scheme with 60% single-aspect north-facing units, or
+      where every unit has below-minimum balcony size.
 
   # === Visual / design / landscape ===
   - id: visual_impact_landscape
     name: Visual impact on rural landscape
     group: visual_design
     description: >
-      Building is visually prominent or out of character in a sensitive rural
-      landscape, hilltop, or scenic route view.
+      The building stands out badly in a rural setting — hilltop locations,
+      ridges, scenic routes, or areas with sensitive landscape designations.
+      Common reason for refusal of one-off houses on prominent sites.
+    example: >
+      A two-storey house on a ridge visible from miles away, in an area
+      where the dev plan protects 'highly sensitive landscape character'.
 
   - id: scale_density_inappropriate
     name: Scale / density / height inappropriate
     group: visual_design
     description: >
-      The proposal's scale, density, or height is excessive for the receiving
-      environment or surrounding context.
+      Too big, too dense, or too tall for the surroundings. Usually applies
+      to apartment blocks, multi-house schemes, or extensions that bulk up
+      a small house disproportionately.
+    example: >
+      A 7-storey apartment block on a street of 2-storey houses, or
+      cramming 12 houses on a site that should hold 4.
 
   - id: design_quality
     name: Architectural / design quality
     group: visual_design
     description: >
-      Design itself is poor, derivative, or fails to respond to the architectural
-      character of the area.
+      The design itself is poor — derivative pattern-book stuff, or fails
+      to respond to the local architectural character. Less common as a
+      sole reason but often cited alongside other issues.
+    example: >
+      A 'standard suburban' design dropped into a stone-cottage village
+      streetscape with no nod to the local materials or proportions.
 
   # === Heritage & character ===
   - id: protected_structure
     name: Impact on protected structure
     group: heritage
     description: >
-      Adverse effect on a protected structure or its curtilage / setting.
+      The site contains, or is next to, a building on the council's
+      Record of Protected Structures (RPS) — historic buildings, churches,
+      old mills, etc. Works that affect the structure or its surroundings
+      need extra care.
+    example: >
+      An extension to a Victorian house on the RPS that uses modern
+      materials clashing with the original character.
 
   - id: aca_aci_character
     name: Architectural Conservation Area character
     group: heritage
     description: >
-      Conflicts with the special character of an ACA, conservation area, or
-      historic streetscape.
+      The site is in an Architectural Conservation Area (ACA) — usually
+      the historic core of a town or village — and the proposal doesn't
+      respect the character of the area.
+    example: >
+      Plastic windows, render and concrete tiles in a stone-and-slate
+      village ACA.
 
   - id: archaeology
     name: Archaeology
     group: heritage
     description: >
-      Disturbance to a recorded archaeological site or zone of archaeological
-      potential.
+      The site is on or near a recorded archaeological site (ringforts,
+      old monastic sites, etc.) or has archaeological potential.
+      Excavation could disturb something significant.
+    example: >
+      Building a house on a site adjoining a Recorded Monument with no
+      archaeological assessment.
 
   # === Environment & biodiversity ===
   - id: natura_appropriate_assessment
     name: Adverse effect on Natura 2000 site
     group: environment
     description: >
-      Article 6 Habitats Directive: adverse effect on integrity of an SAC, SPA,
-      or other European site cannot be ruled out.
+      The site is in or near a European-protected nature site (Special
+      Area of Conservation or Special Protection Area). Under the Habitats
+      Directive, refusal is required if the proposal could harm the site
+      and uncertainty cannot be removed.
+    example: >
+      Housing scheme near the Blackwater River SAC — refused because
+      bird-survey data was insufficient to rule out impact on the
+      protected site.
 
   - id: protected_species
     name: Impact on protected species or habitat
     group: environment
     description: >
-      Loss or degradation of habitat used by a protected species (bats, otters,
-      Brent goose feeding grounds, etc.) outside the Natura framework.
+      Habitat used by a protected species would be lost or degraded.
+      Outside the strict Natura 2000 framework — covers things like
+      bat roosts, otter holts, badger setts, Brent goose feeding grounds.
+    example: >
+      Demolishing a barn known to be a maternity roost for a protected
+      bat species without proper survey or mitigation.
 
   - id: flood_risk
     name: Flood risk
     group: environment
     description: >
-      Site is at risk of fluvial, pluvial, coastal, or surface-water flooding,
-      or the proposal would increase flood risk elsewhere.
+      The site is in a flood plain (Flood Risk Zones A or B), or the
+      proposal would increase flood risk on neighbouring land. Strict
+      tests under 'Planning System and Flood Risk Management' guidelines.
+    example: >
+      Building on land that floods regularly, with no Justification Test
+      showing why this exact site is necessary.
 
   - id: water_quality
     name: Water quality / pollution
     group: environment
     description: >
-      Discharges to surface or ground water risk failing WFD objectives.
+      The proposal would degrade ground or surface water — often comes up
+      with septic tanks in poor-percolation soils, or industrial uses
+      that could discharge to a sensitive waterway.
+    example: >
+      A one-off house relying on a septic tank where ground conditions
+      can't safely treat effluent — refused on water-quality grounds.
 
   - id: eia_eiar_inadequate
     name: EIA / EIAR inadequate
     group: environment
     description: >
-      EIA Report missing required elements, inadequate cumulative assessment,
-      or insufficient mitigation detail.
+      For projects above thresholds, an Environmental Impact Assessment
+      Report is required. If the report is missing key sections or its
+      analysis is too thin, the application is refused on procedural
+      grounds.
+    example: >
+      A wind farm where the EIAR doesn't address cumulative effects with
+      other wind farms in the area — refused as 'EIAR not adequate'.
 
   - id: climate_action_conflict
     name: Conflict with Climate Action Plan
     group: environment
     description: >
-      Proposal undermines specific climate-action targets or commitments.
+      The proposal works against Ireland's binding climate-action commitments
+      — emissions targets, building standards, modal-shift goals.
+      Increasingly used since 2022.
+    example: >
+      A car-dependent development at a location that should be served by
+      public transport, conflicting with the National Climate Action Plan.
 
   # === Infrastructure & services ===
   - id: traffic_access_safety
     name: Traffic / access / road safety
     group: infrastructure
     description: >
-      Sight lines, junction safety, additional traffic load, pedestrian/cyclist
-      safety concerns at access points.
+      The site access is unsafe (poor sight lines, dangerous junction)
+      or the proposal would generate too much traffic for the local
+      road network.
+    example: >
+      A house with a new driveway onto a national secondary route where
+      sight lines fall well short of the 70-metre standard for that
+      speed limit.
 
   - id: parking_inadequate
     name: Parking inadequate
     group: infrastructure
     description: >
-      Insufficient car or bicycle parking provision relative to standards.
+      The proposal provides fewer car or bicycle spaces than the council's
+      standards require for that use and number of units.
+    example: >
+      A 50-apartment scheme proposing 30 car spaces where the council
+      standard is 1.25 per unit (62 spaces).
 
   - id: drainage_water_services
     name: Inadequate drainage / water services
     group: infrastructure
     description: >
-      Capacity of public sewer, water main, or surface-water drainage cannot
-      accommodate the proposal.
+      The public sewer, water main, or surface-water drainage in the
+      area can't take additional connections — Irish Water might have
+      objected, or the council's own infrastructure is at capacity.
+    example: >
+      A 30-house scheme refused because the local wastewater treatment
+      plant is at full capacity and won't be upgraded for 5+ years.
 
   - id: open_space_amenity_inadequate
     name: Inadequate public / communal open space
     group: infrastructure
     description: >
-      Public, semi-private, or play-space provision below standard for the
-      number of units proposed.
+      Below-standard provision of public, semi-private, or children's
+      play space for the number of units proposed. Apartment schemes
+      typically need 5–10% of site area as communal space.
+    example: >
+      A 100-apartment scheme where the only 'communal' space is a
+      decorative courtyard with seating for 6 people.
 
   - id: community_facilities_inadequate
     name: Inadequate community / cultural / childcare provision
     group: infrastructure
     description: >
-      Required ancillary community facilities, cultural floor area, or
-      childcare are missing or undersized.
+      Many development plans require large schemes to include or fund
+      community/cultural floor area or a childcare unit. If those are
+      missing or undersized, refusal is common.
+    example: >
+      A 200-unit scheme that should provide ~3,560 sq m of community/
+      cultural floor area under Dublin City CDP CU025 — providing zero.
 
   # === Catch-all ===
   - id: other
     name: Other
     group: other
     description: >
-      Reason did not match any defined category. Useful as a sentinel — a high
-      'other' rate signals the taxonomy needs new categories.
+      The reason didn't fit any defined category. Useful as a sentinel —
+      a high 'other' rate means the taxonomy needs new categories.
+    example: >
+      Sometimes used for unusual issues like access for sewage trucks,
+      or odd legacy planning conditions not seen elsewhere.

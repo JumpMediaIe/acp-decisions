@@ -24,6 +24,10 @@ _PENDING_COLUMNS: dict[str, list[tuple[str, str]]] = {
         # via devtype_map.py. Backfilled on lgma-sync.
         ("development_type_id", "TEXT"),
     ],
+    "categories": [
+        # Plain-language example, displayed alongside name + description in UI.
+        ("example", "TEXT"),
+    ],
 }
 
 

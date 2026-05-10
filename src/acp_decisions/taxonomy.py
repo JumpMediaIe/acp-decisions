@@ -20,6 +20,7 @@ class Category(TypedDict):
     name: str
     group: str
     description: str
+    example: str
 
 
 def load_taxonomy() -> list[Category]:
@@ -34,6 +35,7 @@ def load_taxonomy() -> list[Category]:
                 name=c["name"].strip(),
                 group=c["group"].strip(),
                 description=c["description"].strip(),
+                example=(c.get("example") or "").strip(),
             )
         )
     return out
@@ -47,12 +49,13 @@ def seed_categories(conn: sqlite3.Connection) -> None:
     """
     cats = load_taxonomy()
     conn.executemany(
-        "INSERT INTO categories (id, name, description, group_label) "
-        "VALUES (?, ?, ?, ?) "
+        "INSERT INTO categories (id, name, description, group_label, example) "
+        "VALUES (?, ?, ?, ?, ?) "
         "ON CONFLICT(id) DO UPDATE SET "
         "  name = excluded.name, "
         "  description = excluded.description, "
-        "  group_label = excluded.group_label",
-        [(c["id"], c["name"], c["description"], c["group"]) for c in cats],
+        "  group_label = excluded.group_label, "
+        "  example = excluded.example",
+        [(c["id"], c["name"], c["description"], c["group"], c["example"]) for c in cats],
     )
     conn.commit()
