@@ -15,11 +15,22 @@ classifies them with local Gemma 4, and pushes the updated `acp.db` to
                            ↓
 ┌─ weekly-update.ps1 ──────────────────────────────────────────────────┐
 │  1. Verify Ollama is reachable at localhost:11434                    │
+│                                                                      │
+│  ── ACP appeals half (pleanala.ie) ──                                │
 │  2. acp scrape --all --from-year 2021                                │
 │       (orchestrator skips pending / decision_date == "" cases)       │
-│  3. acp classify    (Gemma 4 e2b via Ollama, only unclassified rows) │
-│  4. Copy acp.db → irish-planning-tool/data/acp.db                    │
-│  5. git commit + git push origin main      (irish-planning-tool)     │
+│  3. acp classify   (Gemma 4 e2b via Ollama, only unclassified rows)  │
+│                                                                      │
+│  ── Council refusals half (LGMA + agile portal) ──                   │
+│  4. acp lgma-sync                                                    │
+│       (national planning_applications dataset, all 31 LAs)           │
+│  5. scripts/fetch-council-reasons.py                                 │
+│       (refusal-reason text via agileapplications.ie API)             │
+│  6. scripts/classify-council-reasons.py    (Gemma 4 entity extract)  │
+│  7. scripts/categorize-council-reasons.py  (Gemma 4 taxonomy assign) │
+│                                                                      │
+│  8. Copy acp.db → irish-planning-tool/data/acp.db                    │
+│  9. git commit + git push origin main      (irish-planning-tool)     │
 └──────────────────────────┬───────────────────────────────────────────┘
                            ↓
 ┌─ Vercel ─────────────────────────────────────────────────────────────┐
@@ -93,6 +104,15 @@ Look for the last `[FAIL ]` line. Common causes:
   confirm the site is up; check `scrape_errors` table in `acp.db` for
   details. If ACP HTML has changed structure, see
   `docs/discovery-2026-05-02.md` for selectors that may need updating.
+- **`The read operation timed out` on pleanala.ie listings** → The cases
+  listing pages (`/en-ie/cases?type=...&year=...`) can take 20-30 s per
+  response when pleanala is under load. The HTTP client timeout is set to
+  90 s in `src/acp_decisions/http_client.py` (`DEFAULT_TIMEOUT_S`); if
+  that's still too tight, bump it. The client retries 3x with 5 s / 30 s
+  / 5 min backoffs, so transient slowness is usually absorbed. If
+  pleanala stays slow for the whole run, use the council-only catchup
+  below to refresh just the LGMA + agile data and retry the ACP scrape
+  separately when the site recovers.
 
 ### Laptop was off all Thursday
 
@@ -108,6 +128,43 @@ Start-ScheduledTask -TaskName 'planningcheck-decisions-weekly'
 ```
 
 About 25 min later, planningcheck.ie has fresh data.
+
+## Council-only catchup (when pleanala is unreachable)
+
+`weekly-update.ps1` runs the steps in order and throws on first failure,
+so a pleanala.ie outage blocks the LGMA + council-reason refresh even
+though those use different upstreams. When that happens, run the
+council half on its own:
+
+```powershell
+# From acp-decisions repo
+Set-Location C:\Users\akhil\acp-decisions
+uv run acp --db acp.db lgma-sync
+uv run python scripts/fetch-council-reasons.py --db acp.db --delay 1.0
+uv run python scripts/classify-council-reasons.py --db acp.db
+uv run python scripts/categorize-council-reasons.py --db acp.db
+
+# Copy + push the DB
+Copy-Item acp.db C:\Users\akhil\irish-planning-tool\data\acp.db -Force
+Set-Location C:\Users\akhil\irish-planning-tool
+git add data/acp.db
+git commit -m "data: council catchup ($(Get-Date -Format 'yyyy-MM-dd'))"
+git push origin main
+```
+
+Once pleanala is responsive again, run the ACP half on its own:
+
+```powershell
+Set-Location C:\Users\akhil\acp-decisions
+uv run acp --db acp.db scrape --all --from-year 2021
+uv run acp --db acp.db classify
+
+Copy-Item acp.db C:\Users\akhil\irish-planning-tool\data\acp.db -Force
+Set-Location C:\Users\akhil\irish-planning-tool
+git add data/acp.db
+git commit -m "data: acp catchup ($(Get-Date -Format 'yyyy-MM-dd'))"
+git push origin main
+```
 
 ## Changing the schedule
 

@@ -18,7 +18,7 @@ DEFAULT_USER_AGENT = (
     "planningcheck.ie ACP archiver - public records reproduction "
     "for transparency. Contact: contact@planningcheck.ie"
 )
-DEFAULT_TIMEOUT_S = 30.0
+DEFAULT_TIMEOUT_S = 90.0
 DEFAULT_RETRY_BACKOFFS_S: tuple[float, ...] = (5.0, 30.0, 300.0)
 DEFAULT_MIN_INTERVAL_S = 1.5
 
