@@ -125,11 +125,19 @@ class AgileApiClient:
         """Look up the internal application ID for a council reference (e.g. '26/0435').
 
         Returns None if the API can't find it.
+
+        Note: the Agile search endpoint treats `?reference=22%2F4057` (URL-encoded
+        slash) as a different value from `?reference=22/4057` and returns zero
+        results for the encoded form. We therefore build the query string by
+        hand so the slash is sent literally. Other characters in council
+        references are alphanumeric, so this is safe.
         """
         api = self._get_tenant_api(slug)
+        # Quote everything except `/`; references are otherwise digits + letters.
+        from urllib.parse import quote
+        safe_ref = quote(reference, safe="/")
         resp = self._client.get(
-            f"{api}/api/application/search",
-            params={"reference": reference},
+            f"{api}/api/application/search?reference={safe_ref}",
             headers=self._tenant_headers(slug),
         )
         if resp.status_code != 200:
