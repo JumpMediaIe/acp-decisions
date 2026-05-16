@@ -185,9 +185,15 @@ def _upsert_features(
             fetched_at,
             dev_type_id,
         ))
+    # Upsert against the natural key (planning_authority, application_number).
+    # The LGMA API reassigns OBJECTIDs between fetches, so keying on object_id
+    # would silently insert a fresh row every week. The application's identity
+    # is its authority + reference; we let the existing object_id stay even if
+    # the upstream gave us a new one, so the foreign-key references from
+    # council_refusal_reasons et al. remain intact.
     conn.executemany(
         """
-        INSERT OR REPLACE INTO planning_applications (
+        INSERT INTO planning_applications (
             object_id, planning_authority, application_number,
             development_description, development_address, development_postcode,
             application_status, application_type, decision, land_use_code,
@@ -198,6 +204,34 @@ def _upsert_features(
             one_off_kpi, itm_easting, itm_northing, fetched_at,
             development_type_id
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(planning_authority, application_number) DO UPDATE SET
+            development_description = excluded.development_description,
+            development_address     = excluded.development_address,
+            development_postcode    = excluded.development_postcode,
+            application_status      = excluded.application_status,
+            application_type        = excluded.application_type,
+            decision                = excluded.decision,
+            land_use_code           = excluded.land_use_code,
+            area_of_site            = excluded.area_of_site,
+            num_residential_units   = excluded.num_residential_units,
+            one_off_house           = excluded.one_off_house,
+            floor_area              = excluded.floor_area,
+            received_date           = excluded.received_date,
+            decision_date           = excluded.decision_date,
+            decision_due_date       = excluded.decision_due_date,
+            grant_date              = excluded.grant_date,
+            expiry_date             = excluded.expiry_date,
+            appeal_ref_number       = excluded.appeal_ref_number,
+            appeal_status           = excluded.appeal_status,
+            appeal_decision         = excluded.appeal_decision,
+            appeal_decision_date    = excluded.appeal_decision_date,
+            appeal_submitted_date   = excluded.appeal_submitted_date,
+            link_app_details        = excluded.link_app_details,
+            one_off_kpi             = excluded.one_off_kpi,
+            itm_easting             = excluded.itm_easting,
+            itm_northing            = excluded.itm_northing,
+            fetched_at              = excluded.fetched_at,
+            development_type_id     = excluded.development_type_id
         """,
         rows,
     )

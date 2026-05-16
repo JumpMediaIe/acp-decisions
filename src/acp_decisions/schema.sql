@@ -166,6 +166,13 @@ CREATE INDEX IF NOT EXISTS idx_pa_decision_date  ON planning_applications(decisi
 CREATE INDEX IF NOT EXISTS idx_pa_appeal_ref     ON planning_applications(appeal_ref_number);
 CREATE INDEX IF NOT EXISTS idx_pa_one_off_house  ON planning_applications(one_off_house);
 
+-- The LGMA API reassigns OBJECTID values between fetches, so using object_id
+-- as the upsert conflict target produces a fresh row on every weekly sync.
+-- (planning_authority, application_number) is the natural identity of an
+-- application and stays stable across fetches; we upsert against that.
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_pa_authority_application
+  ON planning_applications(planning_authority, application_number);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS decisions_fts USING fts5(
   case_id_url UNINDEXED,
   abp_reference UNINDEXED,
