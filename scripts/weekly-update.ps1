@@ -98,12 +98,18 @@ Run-Native 'Classify new council reasons' 'uv' @('run','python','scripts/classif
 Set-Location $AcpRepo
 Run-Native 'Categorise new council reasons' 'uv' @('run','python','scripts/categorize-council-reasons.py','--db','acp.db')
 
-# --- 3. copy db ------------------------------------------------------------
-Log '[start] Copy acp.db into website repo'
-Copy-Item -Path $DbSrc -Destination $DbDst -Force
+# --- 3. slim + copy db -----------------------------------------------------
+# The source acp.db carries operational columns (fetched_at, application_status
+# etc) and FTS/staging tables the website never queries. Slim a copy into the
+# website repo so it stays under GitHub's per-file 100 MB hard limit.
+Set-Location $AcpRepo
+Run-Native 'Slim DB and write into website repo' 'uv' @(
+    'run','python','scripts/slim-shipped-db.py',
+    '--src', $DbSrc,
+    '--dst', $DbDst
+)
 $size = (Get-Item $DbDst).Length
-Log "        DB size: $([math]::Round($size/1MB, 2)) MB"
-Log '[ ok  ] Copy acp.db into website repo'
+Log "        shipped DB size: $([math]::Round($size/1MB, 2)) MB"
 
 # --- 4. commit + push if changed ------------------------------------------
 Set-Location $WebRepo
