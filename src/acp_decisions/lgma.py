@@ -148,13 +148,18 @@ def _upsert_features(
     fetched_at: str,
 ) -> None:
     """Insert or replace a batch of features in planning_applications."""
+    # LGMA reassigns OBJECTIDs between fetches, so passing the upstream value
+    # would sometimes collide with an existing PK belonging to a different row.
+    # Pass NULL on insert so SQLite auto-assigns; the ON CONFLICT branch below
+    # updates existing rows by composite key without touching their stable
+    # object_id, keeping FKs from council_refusal_reasons intact.
     rows = []
     for feat in features:
         a = feat.get("attributes", {})
         desc = a.get("DevelopmentDescription") or ""
         dev_type_id = map_devtype(desc) if desc else None
         rows.append((
-            a.get("OBJECTID"),
+            None,
             a.get("PlanningAuthority") or "",
             a.get("ApplicationNumber") or "",
             desc or None,
