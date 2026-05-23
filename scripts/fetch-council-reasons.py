@@ -9,15 +9,22 @@ points at agileapplications.ie. For each one:
     4. Record success / empty / error in council_reasons_fetch so we can
        resume incrementally on a re-run
 
+After the fetch completes, the classify (Gemma 4 via Ollama) and
+categorise (taxonomy) stages run automatically — pass --no-followup to
+skip them (the weekly pipeline does this so it can log each stage
+separately).
+
 Polite delay between API calls; safe to ctrl-C and resume — the
 council_reasons_fetch table tracks what we've already attempted.
 """
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 
@@ -37,6 +44,9 @@ def main() -> int:
     parser.add_argument("--from-date", type=str, default="2011-01-01",
                         help="Only fetch refusals decided on or after this date "
                              "(default 2011-01-01; pre-2010 council data is not migrated to the API).")
+    parser.add_argument("--no-followup", action="store_true",
+                        help="Skip the classify + categorise stages that normally run "
+                             "automatically after a fetch.")
     args = parser.parse_args()
 
     # open_db applies schema.sql so the new council_refusal_reasons /
@@ -146,7 +156,32 @@ def main() -> int:
         api.close()
 
     print(f"done. with_reasons={n_with_reasons:,} empty={n_empty:,} errors={n_error:,}")
+
+    if not args.no_followup and n_with_reasons > 0:
+        _run_followup_stages(args.db)
+
     return 0
+
+
+def _run_followup_stages(db_path: str) -> None:
+    """Run classify + categorise on whatever was just fetched.
+
+    Best-effort: a failure in either stage is logged but does not raise,
+    so the fetch result still persists and the next weekly run can retry.
+    """
+    scripts_dir = Path(__file__).parent
+    for stage in ("classify-council-reasons.py", "categorize-council-reasons.py"):
+        path = scripts_dir / stage
+        print(f"\n=== auto: {stage} ===", flush=True)
+        try:
+            subprocess.run(
+                [sys.executable, str(path), "--db", db_path],
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"  {stage} failed (exit {e.returncode}); continuing", flush=True)
+        except FileNotFoundError:
+            print(f"  {stage} not found at {path}; skipping", flush=True)
 
 
 if __name__ == "__main__":

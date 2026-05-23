@@ -88,7 +88,7 @@ Run-Native 'Sync LGMA national planning-applications dataset' 'uv' @('run','acp'
 # Picks up new refusals only (incremental via council_reasons_fetch table).
 # Fast on weekly runs; full backfill is a one-off.
 Set-Location $AcpRepo
-Run-Native 'Fetch council refusal reasons' 'uv' @('run','python','scripts/fetch-council-reasons.py','--db','acp.db','--delay','1.0')
+Run-Native 'Fetch council refusal reasons' 'uv' @('run','python','scripts/fetch-council-reasons.py','--db','acp.db','--delay','1.0','--no-followup')
 
 # --- 2d. Classify any new council reasons via Gemma 4 ---------------------
 Set-Location $AcpRepo
