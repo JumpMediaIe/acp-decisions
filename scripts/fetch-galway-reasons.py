@@ -25,14 +25,14 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
-from io import BytesIO
 from pathlib import Path
 
 import httpx
-from pypdf import PdfReader
 from selectolax.parser import HTMLParser
 
 from acp_decisions.db import open_db
+# _extract_text auto-falls back to Tesseract OCR for scanned PDFs.
+from acp_decisions.pdf_parser import _extract_text
 
 
 BASE = "https://apps.galwaycoco.ie/ViewExternalDocuments"
@@ -57,8 +57,9 @@ END_MARKERS_RE = re.compile(
     r"footnote|an appeal against|appeal must be|coimisi[oó]n\s+plean[aá]la",
     re.I,
 )
-# Each reason starts with a number, e.g. "1.", "2.", "3."
-REASON_NUM_RE = re.compile(r"^\s*(\d{1,2})\.\s*", re.M)
+# Each reason starts with a number followed by either "." or ")",
+# e.g. "1.", "1)", "2.", "2)". Galway templates have used both over the years.
+REASON_NUM_RE = re.compile(r"^\s*(\d{1,2})[\.\)]\s+", re.M)
 
 
 def fetch_doc_list(client: httpx.Client, ref: str) -> str | None:
@@ -95,44 +96,85 @@ def extract_pdf_text(client: httpx.Client, href: str) -> str:
     if pdf_resp.status_code != 200 or not pdf_resp.content:
         return ""
     try:
-        reader = PdfReader(BytesIO(pdf_resp.content))
-        return "\n".join(p.extract_text() or "" for p in reader.pages)
+        # Uses pypdf first; falls back to Tesseract OCR when pypdf
+        # yields <500 chars (i.e. the PDF is a scanned image).
+        return _extract_text(pdf_resp.content)
     except Exception:
         return ""
+
+
+def _normalise(body: str) -> str:
+    body = body.replace("\r", "").strip()
+    body = re.sub(r"[“”]", '"', body)
+    body = re.sub(r"[‘’]", "'", body)
+    body = re.sub(r"\s+\n\s+", "\n", body)
+    body = re.sub(r"[ \t]+", " ", body)
+    body = re.sub(r"\n{3,}", "\n\n", body)
+    # PDF mojibake: 'â' often replaces a dash; '�' is a generic replacement.
+    body = body.replace("�", "-")
+    return body
 
 
 def parse_reasons(text: str) -> list[str]:
     """Split the schedule into a list of reason texts, in order.
 
-    Returns an empty list if no schedule is found.
+    Handles three Galway templates:
+        1. Modern multi-reason: "SCHEDULE REFERRED TO ..." then "1.", "2." ...
+        2. Modern single-reason: "SCHEDULE REFERRED TO ..." then unnumbered prose
+        3. Older inline: "For the reason(s) set out hereunder;" then prose
+
+    Returns an empty list if no recognisable schedule is found.
     """
+    schedule = None
+
     m = SCHEDULE_RE.search(text)
-    if not m:
+    if m:
+        # The "SCHEDULE REFERRED TO" header is usually followed by "PLANNING
+        # REFERENCE NO. ..."; skip past that line if present.
+        after = text[m.end():]
+        # Strip leading "- planning reference no. NN/NN" line if present.
+        after = re.sub(
+            r"^\s*[-:]?\s*planning\s+reference\s+no\.?[^\n]*\n",
+            "",
+            after,
+            count=1,
+            flags=re.I,
+        )
+        schedule = after
+    else:
+        # Older Extension-of-Duration template uses inline reasons.
+        m2 = re.search(
+            r"for\s+the\s+reason\(?s\)?\s+set\s+out\s+hereunder[\s:;,]*",
+            text,
+            re.I,
+        )
+        if m2:
+            schedule = text[m2.end():]
+
+    if schedule is None:
         return []
-    schedule = text[m.end():]
-    # Trim trailing footer / appeal info.
+
     end = END_MARKERS_RE.search(schedule)
     if end:
         schedule = schedule[:end.start()]
-    # Split on leading "N." markers.
+
     splits = list(REASON_NUM_RE.finditer(schedule))
-    if not splits:
-        return []
-    out: list[str] = []
-    for i, mm in enumerate(splits):
-        start = mm.end()
-        next_start = splits[i + 1].start() if i + 1 < len(splits) else len(schedule)
-        body = schedule[start:next_start]
-        # Normalise whitespace and encoding artefacts.
-        body = body.replace("\r", "").strip()
-        body = re.sub(r"[“”]", '"', body)
-        body = re.sub(r"[‘’]", "'", body)
-        body = re.sub(r"\s+\n\s+", "\n", body)
-        body = re.sub(r"[ \t]+", " ", body)
-        body = re.sub(r"\n{3,}", "\n\n", body)
-        if len(body) >= 30:  # filter out noise
-            out.append(body)
-    return out
+    if splits:
+        out: list[str] = []
+        for i, mm in enumerate(splits):
+            start = mm.end()
+            next_start = splits[i + 1].start() if i + 1 < len(splits) else len(schedule)
+            body = _normalise(schedule[start:next_start])
+            if len(body) >= 30:
+                out.append(body)
+        if out:
+            return out
+
+    # No numbered markers — single reason. Return the whole schedule as one.
+    single = _normalise(schedule)
+    if len(single) >= 50:
+        return [single]
+    return []
 
 
 def main() -> int:
