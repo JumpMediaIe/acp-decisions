@@ -80,6 +80,74 @@ _WINDOWS_TESSERACT_PATHS = (
     r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
 )
 
+# DjVuLibre ships ddjvu.exe for rasterising DjVu pages so Tesseract can OCR
+# them. Older council scans (Meath, Wicklow) are DjVu rather than PDF.
+_WINDOWS_DDJVU_PATHS = (
+    r"C:\Program Files\DjVuLibre\ddjvu.exe",
+    r"C:\Program Files (x86)\DjVuLibre\ddjvu.exe",
+)
+
+
+def _find_ddjvu() -> str | None:
+    import os
+    import shutil
+
+    found = shutil.which("ddjvu")
+    if found:
+        return found
+    env_path = os.environ.get("DDJVU_CMD")
+    if env_path and os.path.exists(env_path):
+        return env_path
+    for path in _WINDOWS_DDJVU_PATHS:
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def _ocr_djvu(djvu_bytes: bytes) -> str:
+    """Rasterise a DjVu document with ddjvu, then OCR each page with Tesseract.
+
+    Returns "" if DjVuLibre / Tesseract / their bindings aren't available.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    ddjvu = _find_ddjvu()
+    if not ddjvu:
+        return ""
+    try:
+        import pytesseract
+        from PIL import Image
+    except ImportError:
+        return ""
+    _configure_tesseract_path(pytesseract)
+
+    with tempfile.TemporaryDirectory() as td:
+        djvu_path = os.path.join(td, "doc.djvu")
+        with open(djvu_path, "wb") as f:
+            f.write(djvu_bytes)
+        # -eachpage with a %d template emits one TIFF per page.
+        page_tmpl = os.path.join(td, "page-%d.tiff")
+        try:
+            subprocess.run(
+                [ddjvu, "-format=tiff", "-quality=150", "-eachpage", djvu_path, page_tmpl],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except (subprocess.SubprocessError, OSError):
+            return ""
+        pages = sorted(p for p in os.listdir(td) if p.startswith("page-"))
+        out: list[str] = []
+        for p in pages:
+            try:
+                img = Image.open(os.path.join(td, p))
+                out.append(pytesseract.image_to_string(img))
+            except Exception:  # noqa: BLE001
+                continue
+        return "\n".join(out)
+
 
 def _configure_tesseract_path(pytesseract_module: object) -> None:
     """Point pytesseract at the Tesseract binary if PATH isn't set up.
@@ -107,16 +175,24 @@ def _configure_tesseract_path(pytesseract_module: object) -> None:
 
 
 def _extract_text(pdf_bytes: bytes) -> str:
-    """Extract text from an Order PDF.
+    """Extract text from a document (PDF or DjVu).
 
     Strategy:
-      1. Try pypdf (fast, handles ~80% of ACP orders cleanly).
-      2. If pypdf yields essentially nothing, fall back to OCR via Tesseract
-         (handles scanned-image orders + orders with a corrupted text layer).
-      3. If Tesseract isn't installed, return whatever pypdf gave us; the
-         orchestrator will log `pdf_no_text` so the case is recoverable later.
+      1. DjVu files (magic bytes 'AT&T') go straight to ddjvu -> Tesseract OCR.
+      2. PDFs: try pypdf first (fast, handles ~80% cleanly).
+      3. If pypdf yields essentially nothing, fall back to OCR via Tesseract
+         (scanned-image PDFs + PDFs with a corrupted text layer).
+      4. If the required tool isn't installed, return whatever we got; the
+         caller logs the empty result so the case is recoverable later.
     """
-    text = _extract_with_pypdf(pdf_bytes)
+    # DjVu container magic is "AT&T" then a form-type tag.
+    if pdf_bytes[:4] == b"AT&T":
+        return _ocr_djvu(pdf_bytes)
+
+    try:
+        text = _extract_with_pypdf(pdf_bytes)
+    except Exception:  # noqa: BLE001 — pypdf raises a wide variety on odd files
+        text = ""
     if len(text.strip()) >= _OCR_FALLBACK_THRESHOLD_CHARS:
         return text
     ocr_text = _ocr_pdf(pdf_bytes)

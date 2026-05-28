@@ -48,15 +48,21 @@ USER_AGENT = (
 
 # Document-row labels to prefer.
 NOD_PRIMARY = re.compile(r"^\s*notification of decision\s*$", re.I)
+SCHEDULE_DOC = re.compile(r"schedule of conditions", re.I)
 NOD_FALLBACK = re.compile(r"notification of decision", re.I)
+_FILE_REF_RE = re.compile(r"files[\\/]+([0-9a-fA-F][0-9a-fA-F-]+\.(?:pdf|djvu))", re.I)
 CEO_ORDER = re.compile(r"chief executive[''s]*\s+order", re.I)
 
-# Where the reasons section starts.
+# Where the reasons section starts. Louth uses "SCHEDULE" on its own line
+# after a "REFERENCE NO. X/Y" header. parse_reasons uses the LAST occurrence
+# so body mentions of "schedule" don't trip us up.
 REASONS_START_RE = re.compile(
     r"(reasons?\s+for\s+refusal\b|"
     r"permission\s+is\s+refused\s+for\s+the\s+following\s+reason[s]?\b|"
     r"for\s+the\s+reason\(?s\)?\s+set\s+out\s+hereunder|"
-    r"refused\s+for\s+the\s+following\s+reason[s]?\b)",
+    r"refused\s+for\s+the\s+following\s+reason[s]?\b|"
+    r"reference\s+no\.?\s*[\d/]+|"
+    r"\bschedule\b)",
     re.I,
 )
 END_MARKERS_RE = re.compile(
@@ -79,10 +85,14 @@ def _normalise(body: str) -> str:
 
 
 def parse_reasons(text: str) -> list[str]:
-    m = REASONS_START_RE.search(text)
-    if not m:
+    # Use LAST occurrence: body text may mention "Schedule hereto" earlier,
+    # but the real section header (or REFERENCE NO. line) always comes later.
+    last_match = None
+    for mm in REASONS_START_RE.finditer(text):
+        last_match = mm
+    if last_match is None:
         return []
-    schedule = text[m.end():]
+    schedule = text[last_match.end():]
     end = END_MARKERS_RE.search(schedule)
     if end:
         schedule = schedule[:end.start()]
@@ -110,12 +120,16 @@ def fetch_nod_docid(client: httpx.Client, ref: str) -> str | None:
         return None
     tree = HTMLParser(resp.text)
     primary = None
+    schedule = None
     fallback = None
     for row in tree.css("tr"):
         cells = row.css("td")
-        if len(cells) < 6:
+        # Louth doc rows have 5 cells; skip the giant wrapper <tr>.
+        if not (5 <= len(cells) <= 6):
             continue
         label = (cells[0].text() or "").strip()
+        if len(label) > 80:
+            continue
         link = row.css_first("a")
         if not link or not link.attributes.get("href"):
             continue
@@ -126,13 +140,15 @@ def fetch_nod_docid(client: httpx.Client, ref: str) -> str | None:
         docid = m.group(1)
         if NOD_PRIMARY.match(label) and primary is None:
             primary = docid
+        elif SCHEDULE_DOC.search(label) and schedule is None:
+            schedule = docid
         elif NOD_FALLBACK.search(label) and fallback is None:
             fallback = docid
-    return primary or fallback
+    return primary or schedule or fallback
 
 
 def fetch_pdf_bytes(client: httpx.Client, docid: str) -> bytes:
-    """Walk the two-iframe chain and return the underlying PDF bytes (b'' on failure)."""
+    """Walk the viewer chain and return the underlying PDF/DjVu bytes (b'' on failure)."""
     r1 = client.get(f"{BASE}/ViewFiles.aspx?docid={docid}&format=djvu")
     if r1.status_code != 200:
         return b""
@@ -140,20 +156,17 @@ def fetch_pdf_bytes(client: httpx.Client, docid: str) -> bytes:
     iframe = t1.css_first("iframe")
     if not iframe or not iframe.attributes.get("src"):
         return b""
-    view_pdf_url = f"{BASE}/{iframe.attributes['src']}"
-    r2 = client.get(view_pdf_url)
+    r2 = client.get(f"{BASE}/{iframe.attributes['src']}")
     if r2.status_code != 200:
         return b""
-    t2 = HTMLParser(r2.text)
-    inner = t2.css_first("iframe")
-    if not inner or not inner.attributes.get("src"):
+    m = _FILE_REF_RE.search(r2.text)
+    if not m:
         return b""
-    src = inner.attributes["src"].split("#")[0]
-    # The inner iframe src is like ".\\files\\<uuid>.pdf"; resolve relative to BASE.
-    rel = src.lstrip(".").lstrip("/").lstrip("\\").replace("\\", "/")
-    r3 = client.get(f"{BASE}/{rel}")
+    r3 = client.get(f"{BASE}/files/{m.group(1)}")
     ct = r3.headers.get("content-type", "")
-    if r3.status_code != 200 or not ct.startswith("application/pdf"):
+    if r3.status_code != 200:
+        return b""
+    if not (ct.startswith("application/pdf") or "djvu" in ct):
         return b""
     return r3.content
 
