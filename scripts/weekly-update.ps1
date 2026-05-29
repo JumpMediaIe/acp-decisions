@@ -17,7 +17,7 @@
 $AcpRepo  = 'C:\Users\akhil\acp-decisions'
 $WebRepo  = 'C:\Users\akhil\irish-planning-tool'
 $DbSrc    = Join-Path $AcpRepo 'acp.db'
-$DbDst    = Join-Path $WebRepo 'data\acp.db'
+$DataDir  = Join-Path $WebRepo 'data'
 $LogDir   = Join-Path $AcpRepo 'logs'
 $LogFile  = Join-Path $LogDir ("weekly-" + (Get-Date -Format 'yyyy-MM-dd-HHmm') + '.log')
 $OllamaUrl = 'http://localhost:11434'
@@ -98,18 +98,24 @@ Run-Native 'Classify new council reasons' 'uv' @('run','python','scripts/classif
 Set-Location $AcpRepo
 Run-Native 'Categorise new council reasons' 'uv' @('run','python','scripts/categorize-council-reasons.py','--db','acp.db')
 
-# --- 3. slim + copy db -----------------------------------------------------
-# The source acp.db carries operational columns (fetched_at, application_status
-# etc) and FTS/staging tables the website never queries. Slim a copy into the
-# website repo so it stays under GitHub's per-file 100 MB hard limit.
+# --- 3. slim + split db ----------------------------------------------------
+# The source acp.db carries operational columns + FTS/staging tables the
+# website never queries, and at ~120 MB exceeds GitHub's 100 MB per-file
+# limit. split-shipped-db.py slims it then writes a small core file plus 3
+# balanced shards into the website's data/ dir (each well under the limit).
+# The website ATTACHes the shards and unions them via temp views.
 Set-Location $AcpRepo
-Run-Native 'Slim DB and write into website repo' 'uv' @(
-    'run','python','scripts/slim-shipped-db.py',
+Run-Native 'Slim + split DB into website repo' 'uv' @(
+    'run','python','scripts/split-shipped-db.py',
     '--src', $DbSrc,
-    '--dst', $DbDst
+    '--dst-dir', $DataDir
 )
-$size = (Get-Item $DbDst).Length
-Log "        shipped DB size: $([math]::Round($size/1MB, 2)) MB"
+foreach ($f in 'acp-core.db','acp-shard-1.db','acp-shard-2.db','acp-shard-3.db') {
+    $p = Join-Path $DataDir $f
+    if (Test-Path $p) {
+        Log "        $f size: $([math]::Round((Get-Item $p).Length/1MB, 2)) MB"
+    }
+}
 
 # --- 4. commit + push if changed ------------------------------------------
 Set-Location $WebRepo
@@ -119,13 +125,13 @@ Log '[start] Commit + push if data changed'
 # uncommitted local edits, e.g. dev.log).
 & git pull --rebase --autostash 2>&1 | Out-Null
 
-# Did acp.db actually change?
-& git diff --quiet data/acp.db
+# Did any of the shipped DB files change?
+& git add data/acp-core.db data/acp-shard-1.db data/acp-shard-2.db data/acp-shard-3.db
+& git diff --cached --quiet
 $hasChanges = ($LASTEXITCODE -ne 0)
 if (-not $hasChanges) {
     Log '        no DB changes since last run; skipping commit'
 } else {
-    & git add data/acp.db
     $msg = "weekly: refresh decisions data ($(Get-Date -Format 'yyyy-MM-dd'))"
     & git commit -m $msg | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "git commit failed (exit $LASTEXITCODE)" }
