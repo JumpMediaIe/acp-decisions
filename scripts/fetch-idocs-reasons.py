@@ -81,11 +81,12 @@ CORRESPONDENCE_DOC = re.compile(r"^\s*correspondence\s*$", re.I)
 REASONS_START_STRONG = re.compile(
     r"(schedule\s+of\s+reasons?\s+for\s+refusal|"
     r"reasons?\s+for\s+refusal\b|"
+    r"refusal\s+reason[s]?\b|"  # Cavan: "Refusal Reason" header (reversed, no "for")
     r"permission\s+is\s+refused\s+for\s+the\s+following\s+reason[s]?\b|"
     r"for\s+the\s+reason\(?s\)?\s+set\s+out\s+hereunder|"
     r"refused\s+for\s+the\s+following\s+reason[s]?\b|"
     r"reference\s+number\s+in\s+register[^a-z\d]{0,5}\d+[/\d]*|"
-    r"reference\s+no\.?\s*[\d/]+)",
+    r"reference\s+no\.?:?\s*[\d/]+)",  # ":?" also catches Cavan "REFERENCE NO: NNNN"
     re.I,
 )
 # Bare schedule, but not "END OF SCHEDULE" (negative lookbehind on "of ").
@@ -140,10 +141,21 @@ def _reasons_from_anchor(text: str, marker: re.Pattern) -> list[str]:
     return [single] if len(single) >= 50 else []
 
 
+# Real decisions top out around two dozen reasons (max observed = 24). A parse
+# that yields more than this is over-splitting on noise — typically a combined
+# "Correspondence" bundle (Galway City) where numbered list items from unrelated
+# documents (bylaws, conditions) get mistaken for refusal reasons. Reject the
+# whole parse rather than ship contaminated reasons.
+_MAX_PLAUSIBLE_REASONS = 25
+
+
 def parse_reasons(text: str) -> list[str]:
     # Strong explicit markers first; bare "SCHEDULE" only as a fallback.
-    return (_reasons_from_anchor(text, REASONS_START_STRONG)
-            or _reasons_from_anchor(text, REASONS_START_WEAK))
+    reasons = (_reasons_from_anchor(text, REASONS_START_STRONG)
+               or _reasons_from_anchor(text, REASONS_START_WEAK))
+    if len(reasons) > _MAX_PLAUSIBLE_REASONS:
+        return []
+    return reasons
 
 
 # The viewer iframe references the actual file in one of two ways:
