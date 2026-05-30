@@ -58,6 +58,11 @@ NOD_PRIMARY = re.compile(r"^\s*notification of decision\s*$", re.I)
 SCHEDULE_DOC = re.compile(r"schedule of conditions", re.I)
 NOD_FALLBACK = re.compile(r"notification of decision", re.I)
 DECISION_DOC = re.compile(r"^\s*decision\s*$", re.I)
+# Last-resort label. Some older councils (e.g. Galway City pre-2018) file the
+# decision letter under a generic "Correspondence" category with no decision-
+# labelled doc at all. Only used when none of the above match, so it never
+# overrides a real decision doc elsewhere.
+CORRESPONDENCE_DOC = re.compile(r"^\s*correspondence\s*$", re.I)
 
 # Where the reasons section starts. Two tiers: STRONG markers (explicit
 # phrasing) are tried first; the WEAK bare-"SCHEDULE" matcher is a last resort
@@ -141,7 +146,13 @@ def parse_reasons(text: str) -> list[str]:
             or _reasons_from_anchor(text, REASONS_START_WEAK))
 
 
-_FILE_REF_RE = re.compile(r"files[\\/]+([0-9a-fA-F][0-9a-fA-F-]+\.(?:pdf|djvu))", re.I)
+# The viewer iframe references the actual file in one of two ways:
+#   - a direct "files/<uuid>.pdf" path (most iDocs councils), or
+#   - "ViewPdf.aspx?count=1&file=<uuid>.pdf" (Galway City's viewer).
+# Either way the <uuid>.pdf is fetched from "{base}/files/<uuid>.pdf".
+_FILE_REF_RE = re.compile(
+    r"(?:files[\\/]+|file=)([0-9a-fA-F][0-9a-fA-F-]+\.(?:pdf|djvu))", re.I
+)
 
 
 def fetch_nod_docid(client: httpx.Client, base: str, ref: str) -> str | None:
@@ -149,7 +160,7 @@ def fetch_nod_docid(client: httpx.Client, base: str, ref: str) -> str | None:
     if resp.status_code != 200:
         return None
     tree = HTMLParser(resp.text)
-    primary = schedule = fallback = decision = None
+    primary = schedule = fallback = decision = correspondence = None
     for row in tree.css("tr"):
         cells = row.css("td")
         if not (5 <= len(cells) <= 6):
@@ -172,7 +183,9 @@ def fetch_nod_docid(client: httpx.Client, base: str, ref: str) -> str | None:
             fallback = docid
         elif DECISION_DOC.match(label) and decision is None:
             decision = docid
-    return primary or schedule or fallback or decision
+        elif CORRESPONDENCE_DOC.match(label) and correspondence is None:
+            correspondence = docid
+    return primary or schedule or fallback or decision or correspondence
 
 
 def fetch_doc_bytes(client: httpx.Client, base: str, docid: str) -> bytes:

@@ -72,6 +72,26 @@ def parse_order_pdf(pdf_bytes: bytes) -> OrderParseResult:
 
 _OCR_FALLBACK_THRESHOLD_CHARS = 500
 
+# Some scanned PDFs carry a junk text layer: the page image is unsearchable, but
+# a repeated watermark (e.g. "<Authority> - Inspection Purposes Only!") is stamped
+# in as the only real text. That easily clears the length threshold above, so we
+# also reject layers with too few *distinct* lines — a genuine decision letter has
+# many unique lines; a watermark has one repeated dozens of times.
+_MIN_DISTINCT_LINES = 8
+
+
+def _is_junk_text_layer(text: str) -> bool:
+    """True if `text` looks like a repeated-watermark layer rather than real content."""
+    lines = [ln.strip() for ln in text.splitlines() if len(ln.strip()) > 3]
+    if not lines:
+        return True
+    distinct = set(lines)
+    if len(distinct) < _MIN_DISTINCT_LINES:
+        return True
+    # Single line dominating the whole layer (watermark stamped on every page).
+    most_common = max(distinct, key=lambda d: lines.count(d))
+    return lines.count(most_common) / len(lines) > 0.8
+
 # UB-Mannheim's Windows installer puts tesseract in one of these paths by default.
 # pytesseract relies on tesseract being on PATH; we auto-detect to spare the user
 # the env-var dance.
@@ -193,7 +213,7 @@ def _extract_text(pdf_bytes: bytes) -> str:
         text = _extract_with_pypdf(pdf_bytes)
     except Exception:  # noqa: BLE001 — pypdf raises a wide variety on odd files
         text = ""
-    if len(text.strip()) >= _OCR_FALLBACK_THRESHOLD_CHARS:
+    if len(text.strip()) >= _OCR_FALLBACK_THRESHOLD_CHARS and not _is_junk_text_layer(text):
         return text
     ocr_text = _ocr_pdf(pdf_bytes)
     return ocr_text if ocr_text else text
