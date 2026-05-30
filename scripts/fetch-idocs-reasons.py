@@ -59,22 +59,33 @@ SCHEDULE_DOC = re.compile(r"schedule of conditions", re.I)
 NOD_FALLBACK = re.compile(r"notification of decision", re.I)
 DECISION_DOC = re.compile(r"^\s*decision\s*$", re.I)
 
-# Where the reasons section starts. Union of every template variant seen
-# across the iDocs councils, including OCR-mangled forms:
-#   - "Reasons for Refusal"                                  (Meath)
-#   - "Permission is REFUSED for the following reason(s)"    (Kildare modern)
-#   - "for the reason(s) set out hereunder"                 (Kildare older)
-#   - "SCHEDULE" / "S C H E D U L E" / OCR "CHEDULE"         (Wicklow)
-#   - "Reference Number in Register: NN/NN"                  (Wicklow OCR anchor)
-#   - "Reference No. NN"                                     (Louth)
-REASONS_START_RE = re.compile(
-    r"(reasons?\s+for\s+refusal\b|"
+# Where the reasons section starts. Two tiers: STRONG markers (explicit
+# phrasing) are tried first; the WEAK bare-"SCHEDULE" matcher is a last resort
+# for OCR'd docs that lack any explicit phrase (Wicklow). Splitting them avoids
+# a bare "SCHEDULE" inside e.g. "END OF SCHEDULE" / "FIRST SCHEDULE" winning the
+# last-occurrence anchor over the real reasons header (Mayo).
+#   STRONG:
+#     - "Schedule of Reasons for Refusal"                    (Mayo 2nd schedule)
+#     - "Reasons for Refusal"                                (Meath)
+#     - "Permission is REFUSED for the following reason(s)"  (Kildare modern)
+#     - "for the reason(s) set out hereunder"                (Kildare older)
+#     - "Reference Number in Register: NN/NN"                (Wicklow OCR anchor)
+#     - "Reference No. NN"                                   (Louth)
+#   WEAK:
+#     - bare "SCHEDULE" / "S C H E D U L E" / OCR "CHEDULE"  (Wicklow)
+REASONS_START_STRONG = re.compile(
+    r"(schedule\s+of\s+reasons?\s+for\s+refusal|"
+    r"reasons?\s+for\s+refusal\b|"
     r"permission\s+is\s+refused\s+for\s+the\s+following\s+reason[s]?\b|"
     r"for\s+the\s+reason\(?s\)?\s+set\s+out\s+hereunder|"
     r"refused\s+for\s+the\s+following\s+reason[s]?\b|"
     r"reference\s+number\s+in\s+register[^a-z\d]{0,5}\d+[/\d]*|"
-    r"reference\s+no\.?\s*[\d/]+|"
-    r"\b(?:s(?:\s+)?)?c(?:\s+)?h(?:\s+)?e(?:\s+)?d(?:\s+)?u(?:\s+)?l(?:\s+)?e\b)",
+    r"reference\s+no\.?\s*[\d/]+)",
+    re.I,
+)
+# Bare schedule, but not "END OF SCHEDULE" (negative lookbehind on "of ").
+REASONS_START_WEAK = re.compile(
+    r"(?<!of )\b(?:s(?:\s+)?)?c(?:\s+)?h(?:\s+)?e(?:\s+)?d(?:\s+)?u(?:\s+)?l(?:\s+)?e\b",
     re.I,
 )
 END_MARKERS_RE = re.compile(
@@ -97,12 +108,11 @@ def _normalise(body: str) -> str:
     return body
 
 
-def parse_reasons(text: str) -> list[str]:
-    # Use the LAST occurrence of the section marker: the body often says "set
-    # out in the Schedule hereto" earlier, but the real schedule header comes
-    # later in the document.
+def _reasons_from_anchor(text: str, marker: re.Pattern) -> list[str]:
+    # Use the LAST occurrence of the marker: the body often says "set out in
+    # the Schedule hereto" earlier, but the real header comes later.
     last = None
-    for mm in REASONS_START_RE.finditer(text):
+    for mm in marker.finditer(text):
         last = mm
     if last is None:
         return []
@@ -123,6 +133,12 @@ def parse_reasons(text: str) -> list[str]:
             return out
     single = _normalise(schedule)
     return [single] if len(single) >= 50 else []
+
+
+def parse_reasons(text: str) -> list[str]:
+    # Strong explicit markers first; bare "SCHEDULE" only as a fallback.
+    return (_reasons_from_anchor(text, REASONS_START_STRONG)
+            or _reasons_from_anchor(text, REASONS_START_WEAK))
 
 
 _FILE_REF_RE = re.compile(r"files[\\/]+([0-9a-fA-F][0-9a-fA-F-]+\.(?:pdf|djvu))", re.I)
