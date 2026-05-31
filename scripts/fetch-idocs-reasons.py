@@ -76,6 +76,8 @@ CORRESPONDENCE_DOC = re.compile(r"^\s*correspondence\s*$", re.I)
 #     - "for the reason(s) set out hereunder"                (Kildare older)
 #     - "Reference Number in Register: NN/NN"                (Wicklow OCR anchor)
 #     - "Reference No. NN"                                   (Louth)
+#     - "on the grounds stipulated/set out ... Schedule"     (Carlow)
+#     - "PL Ref: NN/NN  Refusal"                             (Carlow schedule head)
 #   WEAK:
 #     - bare "SCHEDULE" / "S C H E D U L E" / OCR "CHEDULE"  (Wicklow)
 REASONS_START_STRONG = re.compile(
@@ -85,6 +87,8 @@ REASONS_START_STRONG = re.compile(
     r"permission\s+is\s+refused\s+for\s+the\s+following\s+reason[s]?\b|"
     r"for\s+the\s+reason\(?s\)?\s+set\s+out\s+hereunder|"
     r"refused\s+for\s+the\s+following\s+reason[s]?\b|"
+    r"on\s+the\s+grounds\s+(?:stipulated|set\s+out)[^.]{0,40}schedule|"  # Carlow
+    r"pl\s+ref[^a-z]{0,12}refusal|"  # Carlow schedule header "PL Ref: 20/133 Refusal"
     r"reference\s+number\s+in\s+register[^a-z\d]{0,5}\d+[/\d]*|"
     r"reference\s+no\.?:?\s*[\d/]+)",  # ":?" also catches Cavan "REFERENCE NO: NNNN"
     re.I,
@@ -230,6 +234,11 @@ def main() -> int:
     parser.add_argument("--retry", action="store_true")
     parser.add_argument("--from-date", type=str, default="2011-01-01")
     parser.add_argument("--no-followup", action="store_true")
+    parser.add_argument(
+        "--insecure", action="store_true",
+        help="Skip TLS cert verification. Needed for councils with a broken/"
+             "misconfigured cert chain (e.g. Sligo's www.sligococo.ie).",
+    )
     args = parser.parse_args()
 
     base = args.base.rstrip("/")
@@ -268,6 +277,7 @@ def main() -> int:
     t0 = time.monotonic()
 
     with httpx.Client(timeout=60, follow_redirects=True,
+                      verify=not args.insecure,
                       headers={"User-Agent": USER_AGENT}) as client:
         try:
             for i, r in enumerate(rows, 1):
