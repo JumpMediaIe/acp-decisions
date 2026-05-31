@@ -58,6 +58,11 @@ NOD_PRIMARY = re.compile(r"^\s*notification of decision\s*$", re.I)
 SCHEDULE_DOC = re.compile(r"schedule of conditions", re.I)
 NOD_FALLBACK = re.compile(r"notification of decision", re.I)
 DECISION_DOC = re.compile(r"^\s*decision\s*$", re.I)
+# Older Carlow refs (pre-~2014) label the decision "Managers Order" /
+# "Manager's Order" (the old term for Chief Executive's Order) and the cover
+# letter just "Notification". Match both; the Order is the reasons-bearing doc.
+MANAGERS_ORDER_DOC = re.compile(r"manager'?s\s+order|chief\s+executive'?s?\s+order", re.I)
+NOTIFICATION_DOC = re.compile(r"^\s*notification\s*$", re.I)
 # Last-resort label. Some older councils (e.g. Galway City pre-2018) file the
 # decision letter under a generic "Correspondence" category with no decision-
 # labelled doc at all. Only used when none of the above match, so it never
@@ -177,6 +182,7 @@ def fetch_nod_docid(client: httpx.Client, base: str, ref: str) -> str | None:
         return None
     tree = HTMLParser(resp.text)
     primary = schedule = fallback = decision = correspondence = None
+    managers = notification = None
     for row in tree.css("tr"):
         cells = row.css("td")
         # Data rows have 5-7 cells (Sligo's listing uses 7 columns; most use 5-6).
@@ -196,15 +202,23 @@ def fetch_nod_docid(client: httpx.Client, base: str, ref: str) -> str | None:
         docid = m.group(1)
         if NOD_PRIMARY.match(label) and primary is None:
             primary = docid
+        elif MANAGERS_ORDER_DOC.search(label) and managers is None:
+            managers = docid
         elif SCHEDULE_DOC.search(label) and schedule is None:
             schedule = docid
         elif NOD_FALLBACK.search(label) and fallback is None:
             fallback = docid
         elif DECISION_DOC.match(label) and decision is None:
             decision = docid
+        elif NOTIFICATION_DOC.match(label) and notification is None:
+            notification = docid
         elif CORRESPONDENCE_DOC.match(label) and correspondence is None:
             correspondence = docid
-    return primary or schedule or fallback or decision or correspondence
+    # Managers/CE Order carries the reasons schedule, so prefer it over the bare
+    # "Notification" cover letter; both rank below an explicit Notification of
+    # Decision / Schedule of Conditions / Decision doc.
+    return (primary or schedule or fallback or decision
+            or managers or notification or correspondence)
 
 
 def fetch_doc_bytes(client: httpx.Client, base: str, docid: str) -> bytes:
