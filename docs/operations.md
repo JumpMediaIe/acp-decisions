@@ -144,10 +144,10 @@ uv run python scripts/fetch-council-reasons.py --db acp.db --delay 1.0
 uv run python scripts/classify-council-reasons.py --db acp.db
 uv run python scripts/categorize-council-reasons.py --db acp.db
 
-# Copy + push the DB
-Copy-Item acp.db C:\Users\akhil\irish-planning-tool\data\acp.db -Force
+# Slim + split the DB into the website repo, then push (see "Shipping the DB" below)
+uv run python scripts/split-shipped-db.py --src acp.db --dst-dir C:\Users\akhil\irish-planning-tool\data
 Set-Location C:\Users\akhil\irish-planning-tool
-git add data/acp.db
+git add data/acp-core.db data/acp-shard-1.db data/acp-shard-2.db data/acp-shard-3.db
 git commit -m "data: council catchup ($(Get-Date -Format 'yyyy-MM-dd'))"
 git push origin main
 ```
@@ -159,12 +159,55 @@ Set-Location C:\Users\akhil\acp-decisions
 uv run acp --db acp.db scrape --all --from-year 2021
 uv run acp --db acp.db classify
 
-Copy-Item acp.db C:\Users\akhil\irish-planning-tool\data\acp.db -Force
+uv run python scripts/split-shipped-db.py --src acp.db --dst-dir C:\Users\akhil\irish-planning-tool\data
 Set-Location C:\Users\akhil\irish-planning-tool
-git add data/acp.db
+git add data/acp-core.db data/acp-shard-1.db data/acp-shard-2.db data/acp-shard-3.db
 git commit -m "data: acp catchup ($(Get-Date -Format 'yyyy-MM-dd'))"
 git push origin main
 ```
+
+## Shipping the DB to the website (it is SPLIT, not one file)
+
+The source `acp.db` (~130 MB and growing) is **never copied to the website
+as a single file**. It carries operational columns plus FTS/staging tables,
+and a single shipped file would approach GitHub's 100 MB per-file hard limit.
+
+Instead, `scripts/split-shipped-db.py` slims it and writes **four** files into
+`irish-planning-tool/data/`:
+
+| File | Contents |
+|---|---|
+| `acp-core.db`     | small shared tables (categories, the category-assignment join, ACP appeal tables) |
+| `acp-shard-1.db`  | `planning_applications` + `council_refusal_reasons` for ~1/3 of councils |
+| `acp-shard-2.db`  | the next third |
+| `acp-shard-3.db`  | the rest |
+
+Councils are assigned to shards (balanced by reason volume) by the
+`SHARD_COUNCILS` map in `split-shipped-db.py`. **Every RoI planning authority
+must appear in that map** — the script's `verify()` step aborts if any council
+is unmapped, so when you add a brand-new council you add it there too. The
+website (`lib/decisions/db.ts`) opens core read-only, ATTACHes the three
+shards, and exposes them through TEMP VIEWs that `UNION ALL` the shard tables,
+so every query works unchanged against `planning_applications` /
+`council_refusal_reasons`.
+
+To ship (this is what `weekly-update.ps1` automates):
+
+```powershell
+Set-Location C:\Users\akhil\acp-decisions
+uv run python scripts/split-shipped-db.py --src acp.db --dst-dir C:\Users\akhil\irish-planning-tool\data
+Set-Location C:\Users\akhil\irish-planning-tool
+git add data/acp-core.db data/acp-shard-1.db data/acp-shard-2.db data/acp-shard-3.db
+git commit -m "data: refresh decisions DB ($(Get-Date -Format 'yyyy-MM-dd'))"
+git push origin main
+```
+
+Notes:
+- Only the shards whose councils gained rows will change; git may report
+  no change for an untouched shard (e.g. shard-1 when you only added councils
+  that live in shard-2/3). That's expected — commit whatever changed.
+- If any single shard ever approaches 100 MB, rebalance `SHARD_COUNCILS`
+  (move a heavy council to a lighter shard) or add a 4th shard.
 
 ## Changing the schedule
 

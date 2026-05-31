@@ -5,7 +5,7 @@
 #
 #   1. Scrape new ACP cases since the last run (year-walked 2021..current)
 #   2. Classify any unclassified refusal reasons via local Ollama / gemma4:e2b
-#   3. Copy acp.db into irish-planning-tool/data/
+#   3. Slim + split acp.db into irish-planning-tool/data/ as acp-core.db + 3 shards
 #   4. If anything changed: commit and push -> triggers Vercel auto-deploy
 #
 # Idempotent: re-running with no new ACP cases is a no-op (no commit, no push).
