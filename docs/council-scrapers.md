@@ -188,37 +188,43 @@ per-ref integrity check passes.
 
 ## Coverage as of 2026-06-01
 
-51,363 reasons across 21,536 applications in 27 councils. Top councils:
+52,029 reasons across 28,354 applications, 29 councils with reasons (+ Donegal
+attempted). "Refusals" = applications with a REFUSE decision; "%" = share of
+those that now have parsed reasons. Low % on the big agile councils is mostly
+older refs the agile API has no reasons for, not scraper failure.
 
 | Council | Refusals | With reasons | % | Source |
 |---|---|---|---|---|
-| Cork County | 13,108 | 5,532 | 42% | agile |
-| Dun Laoghaire Rathdown | 5,600 | 2,658 | 47% | agile |
-| Galway County | 2,460 | 2,255 | 92% | apps.galwaycoco.ie |
-| Wexford | 2,933 | 1,955 | 67% | agile |
-| Dublin City | 1,805 | 1,599 | 89% | agile |
-| Fingal | 2,538 | 1,422 | 56% | agile |
-| South Dublin | 2,632 | 1,232 | 47% | agile |
+| Cork County | 17,615 | 2,983 | 17% | agile |
+| Dun Laoghaire Rathdown | 5,667 | 2,658 | 47% | agile |
+| Fingal | 5,658 | 2,558 | 45% | agile |
+| Wexford | 5,667 | 2,453 | 43% | agile |
+| Galway County | 4,501 | 2,255 | 50% | apps.galwaycoco.ie |
+| Kildare | 4,326 | 2,024 | 47% | iDocs |
+| South Dublin | 7,590 | 1,597 | 21% | agile |
+| Dublin City | 2,468 | 1,523 | 62% | agile |
+| Wicklow | 2,089 | 1,417 | 68% | iDocs |
+| Meath | 2,096 | 1,345 | 64% | iDocs |
+| Louth | 2,254 | 1,127 | 50% | iDocs |
 | Cork City | 1,632 | 1,166 | 71% | agile |
-| Kildare | 2,148 | 1,077 | 50% | iDocs |
-| Meath | 1,224 | 1,007 | 82% | iDocs |
-| Wicklow | 952 | 945 | 99% | iDocs |
-| Louth | 1,968 | 926 | 47% | iDocs |
-| Waterford | 871 | 760 | 87% | iDocs |
-| Limerick | 751 | 694 | 92% | iDocs |
-| Kilkenny | 730 | 581 | 80% | iDocs |
-| Mayo | 886 | 548 | 62% | iDocs |
-| Kerry | 1,059 | 480 | 45% | iDocs (older docs = combined scans) |
-| Westmeath | 631 | 406 | 64% | iDocs |
-| Roscommon | 462 | 391 | 85% | iDocs |
-| Tipperary | 339 | 319 | 94% | iDocs |
-| Laois | 257 | 254 | 99% | iDocs |
-| Cavan | 293 | 228 | 78% | iDocs |
-| Carlow | 238 | 212 | 89% | iDocs |
-| Sligo | 214 | 204 | 95% | iDocs (--insecure; 7-col layout) |
-| Longford | 209 | 175 | 84% | iDocs |
-| Monaghan | 293 | 228 | 78% | Laserfiche WebLink |
-| Leitrim | 60 | 56 | 93% | iDocs |
+| Waterford | 1,162 | 760 | 65% | iDocs |
+| Limerick | 914 | 694 | 76% | iDocs |
+| Kilkenny | 909 | 581 | 64% | iDocs |
+| Clare | 962 | 562 | 58% | iDocs |
+| Mayo | 911 | 548 | 60% | iDocs |
+| Kerry | 1,336 | 480 | 36% | iDocs (older docs = combined scans) |
+| Westmeath | 925 | 406 | 44% | iDocs |
+| Roscommon | 712 | 391 | 55% | iDocs |
+| Tipperary | 473 | 319 | 67% | iDocs |
+| Laois | 537 | 254 | 47% | iDocs |
+| Offaly | 536 | 235 | 44% | iDocs |
+| Monaghan | 455 | 228 | 50% | Laserfiche WebLink |
+| Carlow | 351 | 212 | 60% | iDocs |
+| Sligo | 337 | 204 | 61% | iDocs (--insecure; 7-col layout) |
+| Cavan | 365 | 181 | 50% | iDocs |
+| Longford | 299 | 175 | 51% | iDocs |
+| Galway City | 481 | 128 | 27% | iDocs (older = combined scans) |
+| Leitrim | 98 | 56 | 56% | iDocs |
 | **Donegal** | **1,286** | **0** | **0%** | Cloudflare — deferred to operating hours |
 
 ## Edge cases to watch
