@@ -76,13 +76,20 @@ CONTACT_UA = (
 # order) that holds the operative reasons, and the Notification of Decision can
 # also carry them. So we build a PRIORITY-ORDERED candidate list and try each
 # until one yields parseable reasons.
-#   1. plain "Chief Executive's Order"        (usual reasons schedule)
+#   1. plain "Chief Executive's Order" / "Chief Executive - Decision"
+#      (the reasons schedule; the second is older Monaghan wording)
 #   2. "Chief Executive's AI Order"           (additional-information order)
 #   3. "Notification of Decision"             (cover letter; sometimes lists them)
+#   4. "Planners Report" / "Planners Rpt"     (last resort; restates the reasons)
+# A doc is matched to the FIRST tier whose pattern hits, tested in this order,
+# so the more-specific AI Order (which also contains the word "Order") is tested
+# before the plain Order. "- Decision" without "Executive" is excluded to avoid
+# matching unrelated "Notification of Decision Letter to third parties" etc.
 _DOC_PRIORITY = (
-    re.compile(r"chief\s+executive'?s?\s+order", re.I),
     re.compile(r"chief\s+executive'?s?\s+ai\s+order", re.I),
-    re.compile(r"notification\s+of\s+decision", re.I),
+    re.compile(r"chief\s+executive'?s?\s*[-:]?\s*(order|decision)", re.I),
+    re.compile(r"notification\s+of\s+decision\b", re.I),
+    re.compile(r"planners?\s+(report|rpt)", re.I),
 )
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -164,17 +171,11 @@ def pick_decision_entries(entries: list[dict], ref: str) -> list[tuple[int, int]
         eid = e.get("entryId")
         if eid is None or pages <= 0:
             continue
-        # AI Order also matches the plain-Order regex (tier 0) via "...Order",
-        # so test the AI pattern first to assign the right, more specific tier.
-        if _DOC_PRIORITY[1].search(name):
-            tier = 1
-        elif _DOC_PRIORITY[0].search(name):
-            tier = 0
-        elif _DOC_PRIORITY[2].search(name):
-            tier = 2
-        else:
-            continue
-        matched.setdefault(tier, (int(eid), int(pages)))
+        # First matching tier wins (patterns are ordered most- to least-specific).
+        for tier, rx in enumerate(_DOC_PRIORITY):
+            if rx.search(name):
+                matched.setdefault(tier, (int(eid), int(pages)))
+                break
     return [matched[t] for t in sorted(matched)]
 
 
