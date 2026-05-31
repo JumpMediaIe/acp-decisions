@@ -16,7 +16,7 @@ Every council we've done falls into one of these buckets:
 
 | Portal family | Used by | Doc structure | Auth | Script |
 |---|---|---|---|---|
-| **agileapplications.ie** | Cork County, Cork City, South Dublin, Fingal, Wexford, Dun Laoghaire, Dublin City | Structured JSON API (prescriptionCode='R') — no PDFs | None | `fetch-council-reasons.py` |
+| **agileapplications.ie** | Cork County, Cork City, South Dublin, Fingal, Wexford, Dun Laoghaire, Dublin City | Structured JSON API (prescriptionCode='R') — no PDFs. Lower coverage on big councils is older refs the API lacks, not a scraper fault | None | `fetch-council-reasons.py` |
 | **iDocsWeb / iDocsWebDPSS** (generic) | Kildare, Meath, Wicklow, Louth, Kerry, Waterford, Limerick, Mayo, Kilkenny, Clare, Westmeath, Roscommon, Galway City, Offaly, Tipperary, Cavan, Laois, Carlow, Sligo, Longford, Leitrim | PDF/DjVu — decision doc reached via `listFiles → ViewFiles → files/<uuid>` chain | Session cookie from the initial `listFiles.aspx` hit | **`fetch-idocs-reasons.py`** (parametrised; the workhorse) |
 | **apps.galwaycoco.ie/ViewExternalDocuments** | Galway County | PDF — reasons after "SCHEDULE REFERRED TO" / "for the reason(s) set out hereunder" | None | `fetch-galway-reasons.py` |
 | **Laserfiche WebLink 11** (`portal.monaghancoco.ie`) | Monaghan | Per-document entries; **server-side text** via `GetTextHtmlForPage` (no OCR) | Browser-like UA + session cookie | `fetch-monaghan-reasons.py` |
