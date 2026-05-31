@@ -179,7 +179,10 @@ def fetch_nod_docid(client: httpx.Client, base: str, ref: str) -> str | None:
     primary = schedule = fallback = decision = correspondence = None
     for row in tree.css("tr"):
         cells = row.css("td")
-        if not (5 <= len(cells) <= 6):
+        # Data rows have 5-7 cells (Sligo's listing uses 7 columns; most use 5-6).
+        # The wrapper/parent row is excluded by the docid-link + label-length
+        # checks below, not the cell count.
+        if not (5 <= len(cells) <= 7):
             continue
         label = (cells[0].text() or "").strip()
         if len(label) > 80:
