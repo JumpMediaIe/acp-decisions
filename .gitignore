@@ -22,6 +22,12 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# DO NOT ignore data/acp.db — it IS the deliverable, intentionally committed
+# The source acp.db is LOCAL-ONLY and must never be committed here: it is
+# ~130 MB (over GitHub's 100 MB hard limit) and carries operational tables.
+# The shipped deliverable is the slimmed core + 3 shards, written into the
+# website repo by scripts/split-shipped-db.py. See docs/operations.md.
+acp.db
+acp.db-wal
+acp.db-shm
 # DO NOT ignore taxonomy.yaml — it IS configuration, intentionally committed
 logs/
