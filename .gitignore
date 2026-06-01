@@ -31,3 +31,6 @@ acp.db-wal
 acp.db-shm
 # DO NOT ignore taxonomy.yaml — it IS configuration, intentionally committed
 logs/
+
+# Donegal scraped PDFs are local working artifacts (re-fetched via MCP browser)
+data/donegal-pdfs/

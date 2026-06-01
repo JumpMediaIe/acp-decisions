@@ -152,57 +152,84 @@ API was reverse-engineered from `app/dist/search/main.js`:
 Try several candidate docs in priority order: a council's primary Order can be a
 scanned PDF with no server text while a lower-priority doc carries the reasons.
 
-## Donegal — Cloudflare + WebForms (interactive browser only)
+## Donegal — Cloudflare + WebForms (interactive MCP browser)
 
 Donegal (`eplan.donegalcoco.ie/PlanningDoc.aspx?id=<ref>`) is the hard one and
-is **not fully done**. Its portal sits behind a **Cloudflare managed
-challenge**, so no standalone HTTP/Playwright scraper can reach it — headless
-Chromium, real Chrome with a persistent profile, stealth flags, and
-`playwright-stealth` all fail to clear it. **Only the MCP Playwright browser**
-(interactive) passes Cloudflare.
+is **partially done** (262 apps / 431 reasons of ~1,286 refusals as of
+2026-06-01; the rest accrue in future MCP-driven sessions). Its portal sits
+behind a **Cloudflare managed challenge**, so no standalone HTTP/Playwright
+scraper reaches it — headless Chromium, real Chrome + persistent profile,
+stealth flags, and `playwright-stealth` all fail. **Only the MCP Playwright
+browser** (interactive) passes Cloudflare, and only on a **top-level
+navigation** (`browser_navigate`), which auto-solves the challenge in a few
+seconds. The clearance is then session-wide for ~280 fetches before the
+`cf_clearance` cookie lapses (then in-page fetches 403 with "Just a moment" and
+you re-navigate the top tab to re-clear).
 
-Two further constraints:
-- **Operating hours.** The portal returns "This system is currently unavailable
-  outside of active hours" at night — scrape during Irish business hours.
-- **Session-stateful documents.** Once a top-level page is open (Cloudflare
-  clearance is then session-wide), the flow is ASP.NET WebForms:
-  1. GET `PlanningDoc.aspx?id=<ref>` (top-level nav passes Cloudflare; an
-     iframe load does **not** — it re-triggers the challenge).
-  2. Postback `__EVENTTARGET=chkAgree, chkAgree=on` (accept copyright) → a
-     `btnViewFiles` submit button appears.
-  3. Postback `btnViewFiles=View Files` → `#gvResults` document table. Each row
-     link has `data-Name` (doc type) + `__doPostBack('gvResults$ctlNN$lnkView')`.
-  4. Decision priority: Chief Executive's / Managers Order → Notification of
-     Decision → Planners Report (reuse `parse_reasons`).
-  5. **PDF delivery needs a real form submit, not fetch.** A raw `fetch` POST
-     does not set the session var that `ViewFile.aspx` reads. Working recipe:
-     build a real `<form>` targeting a hidden iframe, submit the decision
-     postback (browser navigates the iframe → sets session state), then
-     `fetch('ViewFile.aspx')` returns the PDF bytes. base64 it and POST to a
-     tiny local receiver on `127.0.0.1` (localhost is exempt from the HTTPS
-     mixed-content block), which saves the PDF to disk.
-  6. Ingest the saved PDFs with `scripts/load-donegal-pdfs.py` (parses + writes
-     to the DB, reusing `parse_reasons`).
+Also: the portal is **closed outside Irish business hours** — it returns "This
+system is currently unavailable outside of active hours." Scrape during the day.
 
-**Contamination caveat:** `ViewFile.aspx`'s session pointer gets stuck after
-~30–40 fetches in one session — it starts returning the same cached PDF for
-every ref. So (a) work in small batches and restart the browser session between
-them, and (b) ALWAYS verify each PDF strictly contains its own ref (slash form
-`26/60542` or the bare ref) before trusting it; discard byte-identical PDFs
-across refs (the tell-tale of the stale-cache race). `load-donegal-pdfs.py`
-enforces this gate.
+### The working method (what actually worked — earlier attempts didn't)
 
-The local-receiver script and `load-donegal-pdfs.py` are rebuilt per session
-(they were throwaway). Full Donegal coverage (~1,286 refusals) accrues in
-verified MCP-driven batches during operating hours; nothing is shipped until the
-per-ref integrity check passes.
+The whole per-ref flow runs **inside a nested `<iframe>`** created by an
+in-page `browser_evaluate`, NOT a top-level navigation per ref and NOT a
+hand-built POST. Two things make it work:
+
+- Once the parent tab is Cloudflare-cleared, **same-origin iframe loads no
+  longer get challenged** (they did before the parent was cleared). So one
+  cleared tab lets you iterate many refs via iframes.
+- The PDF only downloads when the page's **own real form** (with its live, valid
+  `__VIEWSTATE`) does the decision-row postback. A synthetic `<form>` rebuilt
+  from scraped hidden fields does NOT set the `ViewFile.aspx` session var (it
+  returns a 42-byte empty `lblError` stub). The trick: override the page's
+  `targetMeBlank()` to retarget its real form at a hidden inner iframe, then
+  call the page's own `__doPostBack(pid,'')`. That sets the session var, and a
+  subsequent `fetch('ViewFile.aspx')` returns the real PDF bytes.
+
+Per ref, inside the iframe:
+1. `iframe.src = PlanningDoc.aspx?id=<ref>`; wait for `#chkAgree`.
+2. check `#chkAgree` and eval its `onclick` (the copyright postback) → wait;
+   `#btnViewFiles` appears.
+3. `#btnViewFiles.click()` → wait; `#gvResults` table loads. Decision priority:
+   Chief Executive's / Managers Order → Notification of Decision → Planners
+   Report (reuse `parse_reasons`); read the row's `data-Name` + postback id.
+4. add an inner iframe, set `targetMeBlank` to retarget the real form at it,
+   `__doPostBack(pid,'')` → wait → `fetch('ViewFile.aspx')` → PDF bytes.
+5. base64 it and POST to the local sink (`scripts/_pdf_sink.py`, 127.0.0.1:8731
+   — localhost is exempt from the HTTPS mixed-content block), which writes
+   `data/donegal-pdfs/<ref>.pdf`.
+
+### Driver + queue (keeps MCP-call context small)
+
+`_pdf_sink.py` doubles as a ref queue: `GET /next?n=40` dispenses pending refs
+(council refusals minus PDFs already on disk), `GET /status` reports progress.
+Install a `window.__don(n)` driver once via `browser_evaluate` (it loops the
+above over `/next` refs); then each batch is just `await window.__don(40)` — no
+need to re-send the big function. A top-level `browser_navigate` wipes
+`window.__don`, so re-install it after each Cloudflare re-clear. Restarting the
+sink clears its in-memory `issued` set, so refs stuck "issued" by a failed batch
+(but never saved) return to the queue — PDFs on disk are the source of truth.
+
+### Integrity gate (mandatory)
+
+`ViewFile.aspx` can occasionally serve a stale/other ref's PDF. **Always verify
+each PDF strictly contains its own ref** (slash form `26/60542` or the bare ref)
+before trusting it. `scripts/load-donegal-pdfs.py` enforces this: it parses each
+PDF, skips any whose text lacks its ref (logged as `bad_ref`), and only writes
+the survivors. In the first 284-PDF batch this caught 9 contaminated files.
+(Note: the nested-iframe-per-ref method largely avoids the stale cache that a
+single reused session suffers — that batch was 280/280 byte-unique — but the
+gate stays the safety net.)
+
+`_pdf_sink.py` and `load-donegal-pdfs.py` live in `scripts/`; the
+`data/donegal-pdfs/` working dir is gitignored (local artifacts, re-fetchable).
 
 ## Coverage as of 2026-06-01
 
-53,230 reasons across 28,934 applications, 29 councils with reasons (+ Donegal
-attempted). "Refusals" = applications with a REFUSE decision; "%" = share of
-those that now have parsed reasons. Low % on the big agile councils is mostly
-older refs the agile API has no reasons for, not scraper failure.
+53,661 reasons across 29,196 applications, 31 councils with reasons. "Refusals"
+= applications with a REFUSE decision; "%" = share of those that now have parsed
+reasons. Low % on the big agile councils is mostly older refs the agile API has
+no reasons for, not scraper failure; Donegal is an in-progress partial.
 
 | Council | Refusals | With reasons | % | Source |
 |---|---|---|---|---|
@@ -236,7 +263,7 @@ older refs the agile API has no reasons for, not scraper failure.
 | Longford | 299 | 175 | 51% | iDocs |
 | Galway City | 481 | 128 | 27% | iDocs (older = combined scans) |
 | Leitrim | 98 | 56 | 56% | iDocs |
-| **Donegal** | **1,286** | **0** | **0%** | Cloudflare — deferred to operating hours |
+| Donegal | 1,286 | 262 | 20% | Cloudflare — MCP browser, partial (in progress) |
 
 ## Edge cases to watch
 
