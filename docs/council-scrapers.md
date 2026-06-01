@@ -17,6 +17,17 @@ Every council we've done falls into one of these buckets:
 | Portal family | Used by | Doc structure | Auth | Script |
 |---|---|---|---|---|
 | **agileapplications.ie** | Cork County, Cork City, South Dublin, Fingal, Wexford, Dun Laoghaire, Dublin City | Structured JSON API (prescriptionCode='R') — no PDFs. Lower coverage on big councils is older refs the API lacks, not a scraper fault | None | `fetch-council-reasons.py` |
+
+**Cork City quirk:** it's on the agile portal (slug `corkcity`) but (a) its
+`link_app_details` points at `planning.corkcity.ie`, not agileapplications.ie —
+backfill it to `https://planning.agileapplications.ie/corkcity/` so the
+fetcher's filter picks it up; and (b) its `application_number` is stored
+slash-stripped (`2543892`) while the portal only matches `25/43892` (slash after
+the 2-digit year prefix). `_search_ref()` in `fetch-council-reasons.py` reinserts
+the slash for the `corkcity` slug only. The agile search is **flaky** for Cork
+City — expect a chunk of "not found via search" on the first pass that clears on
+`--retry` (we needed three passes, easing the delay each time: 0.8 → 1.2 → 1.5
+→ 2.0s).
 | **iDocsWeb / iDocsWebDPSS** (generic) | Kildare, Meath, Wicklow, Louth, Kerry, Waterford, Limerick, Mayo, Kilkenny, Clare, Westmeath, Roscommon, Galway City, Offaly, Tipperary, Cavan, Laois, Carlow, Sligo, Longford, Leitrim | PDF/DjVu — decision doc reached via `listFiles → ViewFiles → files/<uuid>` chain | Session cookie from the initial `listFiles.aspx` hit | **`fetch-idocs-reasons.py`** (parametrised; the workhorse) |
 | **apps.galwaycoco.ie/ViewExternalDocuments** | Galway County | PDF — reasons after "SCHEDULE REFERRED TO" / "for the reason(s) set out hereunder" | None | `fetch-galway-reasons.py` |
 | **Laserfiche WebLink 11** (`portal.monaghancoco.ie`) | Monaghan | Per-document entries; **server-side text** via `GetTextHtmlForPage` (no OCR) | Browser-like UA + session cookie | `fetch-monaghan-reasons.py` |
@@ -188,7 +199,7 @@ per-ref integrity check passes.
 
 ## Coverage as of 2026-06-01
 
-52,029 reasons across 28,354 applications, 29 councils with reasons (+ Donegal
+53,230 reasons across 28,934 applications, 29 councils with reasons (+ Donegal
 attempted). "Refusals" = applications with a REFUSE decision; "%" = share of
 those that now have parsed reasons. Low % on the big agile councils is mostly
 older refs the agile API has no reasons for, not scraper failure.
@@ -206,7 +217,7 @@ older refs the agile API has no reasons for, not scraper failure.
 | Wicklow | 2,089 | 1,417 | 68% | iDocs |
 | Meath | 2,096 | 1,345 | 64% | iDocs |
 | Louth | 2,254 | 1,127 | 50% | iDocs |
-| Cork City | 1,632 | 1,166 | 71% | agile |
+| Cork City | 669 | 580 | 87% | agile (slash-stripped ref; corkcity-only transform + link backfill) |
 | Waterford | 1,162 | 760 | 65% | iDocs |
 | Limerick | 914 | 694 | 76% | iDocs |
 | Kilkenny | 909 | 581 | 64% | iDocs |

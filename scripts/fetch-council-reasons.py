@@ -32,6 +32,21 @@ from acp_decisions.agile_api import AgileApiClient, AgileApiError
 from acp_decisions.db import open_db
 
 
+def _search_ref(slug: str | None, application_number: str) -> str:
+    """Map a stored application_number to the form the Agile search expects.
+
+    Almost every agile council stores the reference already in searchable form
+    (e.g. Cork County '10/378', Wexford '20221423'). Cork City is the exception:
+    we store the slash-stripped form '2543892', but its portal only matches the
+    'NN/NNNNN' form '25/43892' (slash after the 2-digit year prefix). Insert it
+    for corkcity only, leaving every other council untouched.
+    """
+    ref = (application_number or "").strip()
+    if slug == "corkcity" and "/" not in ref and ref.isdigit() and len(ref) > 2:
+        return ref[:2] + "/" + ref[2:]
+    return ref
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", default="acp.db")
@@ -96,7 +111,7 @@ def main() -> int:
         for i, r in enumerate(rows, 1):
             object_id = r["object_id"]
             slug = api.slug_from_link(r["link_app_details"])
-            ref = r["application_number"]
+            ref = _search_ref(slug, r["application_number"])
             error_msg: str | None = None
             reasons = []
             try:
