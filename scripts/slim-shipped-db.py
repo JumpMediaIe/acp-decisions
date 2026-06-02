@@ -41,6 +41,8 @@ KEEP_PA_COLUMNS = [
     "link_app_details",
     "appeal_ref_number",
     "appeal_decision",
+    "lat",
+    "lng",
 ]
 
 
@@ -92,7 +94,9 @@ def slim(dst: Path) -> None:
             development_type_id TEXT,
             link_app_details TEXT,
             appeal_ref_number TEXT,
-            appeal_decision TEXT
+            appeal_decision TEXT,
+            lat REAL,
+            lng REAL
         );
         INSERT INTO planning_applications_new ({cols})
             SELECT {cols} FROM planning_applications;

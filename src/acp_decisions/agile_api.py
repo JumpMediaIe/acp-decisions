@@ -153,6 +153,38 @@ class AgileApiClient:
                 return r.get("id")
         return results[0].get("id")
 
+    def list_documents(self, slug: str, app_id: int) -> list[dict]:
+        """List an application's documents.
+
+        Each entry has `documentId`, `documentHash`, `name`, `description`
+        (e.g. 'Title: Notification of Decision') and `mediaDescription`
+        (e.g. 'Notification of Decision'). Empty list on any non-200.
+        """
+        api = self._get_tenant_api(slug)
+        resp = self._client.get(
+            f"{api}/api/application/{app_id}/document?page=1&pageSize=100",
+            headers=self._tenant_headers(slug),
+        )
+        if resp.status_code != 200:
+            return []
+        return resp.json() or []
+
+    def download_document(self, slug: str, document_hash: str) -> bytes:
+        """Download a document's bytes by its hash.
+
+        The portal serves files from
+        {api}/api/application/document/{TENANT_CODE}/{documentHash}
+        (discovered from the citizen portal's 'View' action).
+        """
+        api = self._get_tenant_api(slug)
+        code = self._get_tenant_code(slug)
+        resp = self._client.get(
+            f"{api}/api/application/document/{code}/{document_hash}",
+            headers=self._tenant_headers(slug),
+        )
+        resp.raise_for_status()
+        return resp.content
+
     def fetch_refusal_reasons(self, slug: str, app_id: int) -> list[AgileReason]:
         """Fetch refusal reasons for an application.
 

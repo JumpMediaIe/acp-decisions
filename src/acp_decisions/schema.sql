@@ -114,6 +114,8 @@ CREATE TABLE IF NOT EXISTS planning_applications (
   one_off_kpi            TEXT,
   itm_easting            REAL,
   itm_northing           REAL,
+  lat                    REAL,                  -- WGS84 point from the LGMA layer geometry
+  lng                    REAL,                  -- (backfilled by scripts/backfill-geometry.py)
   fetched_at             TEXT NOT NULL
 );
 
@@ -157,6 +159,17 @@ CREATE TABLE IF NOT EXISTS council_reasons_fetch (
   object_id     INTEGER PRIMARY KEY,
   fetched_at    TEXT NOT NULL,
   reasons_count INTEGER NOT NULL,
+  error_message TEXT
+);
+
+-- Tracks OCR attempts on scanned 'Notification of Decision' letters (agile
+-- portal). Separate from council_reasons_fetch so the OCR backfill is
+-- independent of, and resumable alongside, the structured-API fetch.
+CREATE TABLE IF NOT EXISTS ocr_reasons_fetch (
+  object_id     INTEGER PRIMARY KEY,
+  fetched_at    TEXT NOT NULL,
+  reasons_count INTEGER NOT NULL,
+  doc_title     TEXT,
   error_message TEXT
 );
 

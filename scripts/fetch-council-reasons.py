@@ -94,6 +94,10 @@ def main() -> int:
         "   AND pa.application_number IS NOT NULL "
         "   AND pa.application_number != '' "
         "   AND pa.decision_date >= ? "
+        # Never touch applications that already have reasons (e.g. from the OCR
+        # backfill) — this fetch is only for filling in ones with none.
+        "   AND NOT EXISTS (SELECT 1 FROM council_refusal_reasons r "
+        "                   WHERE r.object_id = pa.object_id) "
         f"  {where_extra}"
         " ORDER BY pa.object_id"
     )
@@ -126,8 +130,12 @@ def main() -> int:
                 error_msg = str(e)[:300]
 
             now = datetime.now(timezone.utc).isoformat()
-            # Replace previous reasons for this case (idempotent)
-            conn.execute("DELETE FROM council_refusal_reasons WHERE object_id = ?", (object_id,))
+            # Replace previous reasons for this case (idempotent) — but ONLY when
+            # we actually have reasons to insert. A blanket delete would wipe
+            # reasons sourced elsewhere (e.g. the OCR backfill) whenever the API
+            # returns empty for an application it doesn't cover.
+            if reasons:
+                conn.execute("DELETE FROM council_refusal_reasons WHERE object_id = ?", (object_id,))
             for reason in reasons:
                 conn.execute(
                     """
