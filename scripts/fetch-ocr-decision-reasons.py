@@ -80,26 +80,95 @@ def _resolve_tesseract() -> None:
     )
 
 
-def ocr_pdf(pdf_bytes: bytes, dpi: int = 300) -> str:
-    """OCR every page of a PDF and return the concatenated text."""
-    import fitz  # PyMuPDF
+_DDJVU_CMD: str | None = None
+
+
+def _resolve_ddjvu() -> str:
+    """Locate the ddjvu binary (DjVuLibre) on PATH or the Windows default. '' if absent."""
+    global _DDJVU_CMD
+    if _DDJVU_CMD is not None:
+        return _DDJVU_CMD
+    for c in (
+        shutil.which("ddjvu"),
+        os.environ.get("DDJVU_CMD"),
+        r"C:\Program Files (x86)\DjVuLibre\ddjvu.exe",
+        r"C:\Program Files\DjVuLibre\ddjvu.exe",
+    ):
+        if c and Path(c).exists():
+            _DDJVU_CMD = c
+            return c
+    _DDJVU_CMD = ""
+    return ""
+
+
+class UnsupportedDoc(Exception):
+    """A decision document in a format we can't OCR here (e.g. legacy MS .doc)."""
+
+
+def _ocr_fitz_doc(doc, dpi: int) -> str:
+    """OCR every page of an open PyMuPDF document."""
     import pytesseract
     from PIL import Image
 
     out: list[str] = []
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    for page in doc:
+        pix = page.get_pixmap(dpi=dpi)
+        img = Image.open(io.BytesIO(pix.tobytes("png")))
+        # psm 6 (uniform block) reads the Schedule's two-column reason table far
+        # better than psm 3 — it keeps the shaded header and the leading row
+        # numbers (1. 2. 3.), which are what we split reasons on.
+        out.append(pytesseract.image_to_string(img, config="--psm 6"))
+    return "\n\n".join(out)
+
+
+def ocr_document(content: bytes, dpi: int = 300) -> str:
+    """OCR a decision document and return its text.
+
+    Handles the formats agile councils serve scanned letters as: PDF, TIFF, and
+    DjVu (converted to TIFF via ddjvu). Raises UnsupportedDoc for legacy MS .doc
+    (OLE) files, which need a different toolchain.
+    """
+    import fitz  # PyMuPDF
+
+    head = content[:8]
+    if head[:4] == b"%PDF":
+        doc = fitz.open(stream=content, filetype="pdf")
+        try:
+            return _ocr_fitz_doc(doc, dpi)
+        finally:
+            doc.close()
+    if head[:4] in (b"II*\x00", b"MM\x00*"):  # TIFF (little/big-endian)
+        doc = fitz.open(stream=content, filetype="tif")
+        try:
+            return _ocr_fitz_doc(doc, dpi)
+        finally:
+            doc.close()
+    if head.startswith(b"AT&TFORM"):  # DjVu
+        ddjvu = _resolve_ddjvu()
+        if not ddjvu:
+            raise UnsupportedDoc("DjVu (ddjvu not available)")
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            ip = Path(td) / "in.djvu"
+            op = Path(td) / "out.tiff"
+            ip.write_bytes(content)
+            subprocess.run(
+                [ddjvu, "-format=tiff", "-quality=85", str(ip), str(op)],
+                check=True, capture_output=True, timeout=180,
+            )
+            doc = fitz.open(str(op))
+            try:
+                return _ocr_fitz_doc(doc, dpi)
+            finally:
+                doc.close()
+    if head[:4] == b"\xd0\xcf\x11\xe0":  # OLE compound = legacy MS .doc
+        raise UnsupportedDoc("legacy MS .doc (OLE)")
+    # Unknown — let PyMuPDF try to sniff a supported image/doc format.
+    doc = fitz.open(stream=content)
     try:
-        for page in doc:
-            pix = page.get_pixmap(dpi=dpi)
-            img = Image.open(io.BytesIO(pix.tobytes("png")))
-            # psm 6 (assume a uniform block of text) reads the Schedule's
-            # two-column reason table far better than the default psm 3 —
-            # it preserves the shaded header and the leading row numbers
-            # (1. 2. 3.), which are what we split reasons on.
-            out.append(pytesseract.image_to_string(img, config="--psm 6"))
+        return _ocr_fitz_doc(doc, dpi)
     finally:
         doc.close()
-    return "\n\n".join(out)
 
 
 # --- document selection -----------------------------------------------------
@@ -273,11 +342,11 @@ def main() -> int:
                     n_no_doc += 1
                 else:
                     doc_title = (doc.get("mediaDescription") or "").strip() or None
-                    pdf = api.download_document(slug, doc["documentHash"])
-                    if pdf[:4] != b"%PDF":
-                        raise AgileApiError("download was not a PDF")
-                    text = ocr_pdf(pdf, dpi=args.dpi)
+                    blob = api.download_document(slug, doc["documentHash"])
+                    text = ocr_document(blob, dpi=args.dpi)
                     reasons = extract_reasons(llm, text)
+            except UnsupportedDoc as e:
+                error_msg = f"unsupported doc: {e}"
             except (AgileApiError, httpx.HTTPError) as e:
                 error_msg = str(e)[:300]
             except Exception as e:  # OCR / decode / LLM errors — log, keep going
